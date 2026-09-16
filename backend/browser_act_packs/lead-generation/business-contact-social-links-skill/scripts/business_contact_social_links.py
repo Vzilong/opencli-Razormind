@@ -99,7 +99,10 @@ def run_business_contact_social_links_task(api_key, target):
                 finished = True
                 break
             elif status in ["failed", "canceled"]:
-                print(f"Error: Task {status}. Please check your BrowserAct dashboard.", flush=True)
+                print(
+                    f"Error: Task {status}. Please check your BrowserAct dashboard.",
+                    flush=True,
+                )
                 return None
         except Exception as e:
             timestamp = datetime.datetime.now().strftime("%H:%M:%S")

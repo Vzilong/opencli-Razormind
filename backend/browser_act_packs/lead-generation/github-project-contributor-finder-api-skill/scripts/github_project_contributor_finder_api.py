@@ -107,7 +107,10 @@ def run_github_project_contributor_finder_task(
         time.sleep(10)
 
     if not finished:
-        print(f"Error: Task polling timed out after {max_poll_time} seconds.", flush=True)
+        print(
+            f"Error: Task polling timed out after {max_poll_time} seconds.",
+            flush=True,
+        )
         return None
 
     # 3. Get Results

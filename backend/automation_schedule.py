@@ -1,8 +1,8 @@
 """Timezone-aware occurrence matching for the Automation schedule contract."""
 
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-import re
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 _SCHEDULE_RE = re.compile(r"^(daily|weekdays|weekly)@(\d{2}):(\d{2})$")

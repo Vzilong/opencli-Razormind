@@ -41,7 +41,9 @@ import sys
 from pathlib import Path
 
 DEFAULT_FILE = Path(__file__).resolve().parent.parent / "assets" / "brain-methods.csv"
-FIELDS = ("category", "technique_name", "description", "detail", "provenance", "good_for", "audience")
+FIELDS = (
+    "category", "technique_name", "description", "detail", "provenance", "good_for", "audience"
+)
 # Optional columns beyond the original four — absent in older CSVs and in --extra
 # overlays, so always read through .get/setdefault. `provenance` (classic|signature|
 # playful) drives the "Proven & Professional" lead group; `good_for` (a |-separated
@@ -132,7 +134,9 @@ def resolve_detail(row: dict, csv_dir: Path) -> str | None:
         return None
     path = (csv_dir / row["detail"]).resolve()
     if not path.is_file():
-        print(f"# detail file not found for {row['technique_name']}: {row['detail']}", file=sys.stderr)
+        print(
+            f"# detail file not found for {row['technique_name']}: {row['detail']}", file=sys.stderr
+        )
         return None
     return path.read_text(encoding="utf-8").strip()
 
@@ -145,8 +149,13 @@ def fmt_categories(cats: list[tuple[str, int]], as_json: bool) -> str:
 
 def fmt_list(rows: list[dict], as_json: bool) -> str:
     if as_json:
-        return json.dumps([{k: r[k] for k in ("category", "technique_name", "description")} for r in rows])
-    return "\n".join(f"{r['category']}\t{r['technique_name']}\t{r['description']}" for r in rows)
+        return json.dumps([
+            {k: r[k] for k in ("category", "technique_name", "description")}
+            for r in rows
+        ])
+    return "\n".join(
+        f"{r['category']}\t{r['technique_name']}\t{r['description']}" for r in rows
+    )
 
 
 def fmt_show(rows: list[dict], csv_dir: Path, as_json: bool) -> str:
@@ -185,7 +194,9 @@ def pretty(cat: str) -> str:
 
 ICON_FILE = DEFAULT_FILE.parent / "brain-icons.json"
 
-CHIP = '<rect x="1.5" y="1.5" width="41" height="41" rx="12" fill="currentColor" fill-opacity="0.12"/>'
+CHIP = (
+    '<rect x="1.5" y="1.5" width="41" height="41" rx="12" fill="currentColor" fill-opacity="0.12"/>'
+)
 
 _FALLBACK_GLYPH = (
     '<circle cx="22" cy="22" r="11" fill="currentColor" fill-opacity="0.16"/>'
@@ -193,8 +204,10 @@ _FALLBACK_GLYPH = (
     '<circle cx="22" cy="22" r="3.4" fill="currentColor"/>'
 )
 _FALLBACK_TECH = (
-    '<rect x="15" y="15" width="14" height="14" rx="2.5" transform="rotate(45 22 22)" '
-    'fill="none" stroke="currentColor" stroke-width="2"/><circle cx="22" cy="22" r="2.4" fill="currentColor"/>'
+    '<rect x="15" y="15" width="14" height="14" rx="2.5" '
+    'transform="rotate(45 22 22)" fill="none" '
+    'stroke="currentColor" stroke-width="2"/>'
+    '<circle cx="22" cy="22" r="2.4" fill="currentColor"/>'
 )
 
 
@@ -215,11 +228,11 @@ def _hsl_hex(deg: int, s: float, lt: float) -> str:
     import colorsys
 
     r, g, b = colorsys.hls_to_rgb((deg % 360) / 360, lt, s)
-    return "#%02x%02x%02x" % (round(r * 255), round(g * 255), round(b * 255))
+    return f"#{round(r * 255):02x}{round(g * 255):02x}{round(b * 255):02x}"
 
 
 def category_style(cat: str) -> tuple[str, str]:
-    """(hue, glyph markup) for a category — from the sidecar for the shipped set, derived for extras."""
+    """Return the hue and glyph markup for a category from the sidecar or fallback."""
     style = _CATEGORY_STYLES.get(cat)
     if style and style.get("hue"):
         return style["hue"], style.get("glyph") or _FALLBACK_GLYPH
@@ -242,7 +255,10 @@ SELECTOR_TEMPLATE = r"""<!DOCTYPE html>
 /* set the theme before first paint so there's no light-mode flash */
 (function(){ try {
   var t = localStorage.getItem('bmad-theme');
-  if (!t) { t = (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light'; }
+  if (!t) {
+    t = (window.matchMedia &&
+      window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+  }
   document.documentElement.setAttribute('data-theme', t);
 } catch(e){} })();
 </script>
@@ -262,60 +278,87 @@ SELECTOR_TEMPLATE = r"""<!DOCTYPE html>
   /* lift the category hue toward white on dark surfaces so deep hues stay legible */
   :root[data-theme="dark"] section > h2 { color:color-mix(in srgb, var(--c) 62%, #fff); }
   :root[data-theme="dark"] .tech .ico { color:color-mix(in srgb, var(--c) 68%, #fff); }
-  :root[data-theme="dark"] label.tech:has(input:checked) { border-color:color-mix(in srgb, var(--c) 60%, #fff); }
+  :root[data-theme="dark"] label.tech:has(input:checked) { border-color:color-mix(in srgb,
+  var(--c) 60%, #fff); }
   .titlerow { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
-  .themebtn { flex:none; width:36px; height:36px; border-radius:9px; background:var(--control); color:var(--ink); font-size:17px; line-height:1; display:inline-flex; align-items:center; justify-content:center; }
+  .themebtn { flex:none; width:36px; height:36px; border-radius:9px; background:var(--control);
+  color:var(--ink); font-size:17px; line-height:1; display:inline-flex; align-items:center;
+  justify-content:center; }
   .themebtn:hover { background:var(--raised); }
   * { box-sizing:border-box; }
-  body { margin:0; font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; background:var(--bg); color:var(--ink); }
-  header { position:sticky; top:0; z-index:5; background:var(--surface); padding:20px 0 12px; border-bottom:1px solid var(--line); box-shadow:0 2px 12px var(--shadow); }
-  .hwrap { max-width:1120px; margin:0 auto; padding:0 24px; }  /* align header content with the card column on wide screens */
+  body { margin:0; font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe
+  UI",Roboto,Helvetica,Arial,sans-serif; background:var(--bg); color:var(--ink); }
+  header { position:sticky; top:0; z-index:5; background:var(--surface); padding:20px 0 12px;
+  border-bottom:1px solid var(--line); box-shadow:0 2px 12px var(--shadow); }
+  .hwrap { max-width:1120px; margin:0 auto; padding:0 24px; }  /* align header content with the
+  card column on wide screens */
   h1 { margin:0 0 4px; font-size:24px; letter-spacing:-.02em; }
   .sub { margin:0 0 12px; color:var(--muted); font-size:14px; max-width:74ch; }
   button { font:inherit; border:0; border-radius:8px; cursor:pointer; }
   .composer { display:flex; flex-direction:column; gap:9px; margin:6px 0 12px; }
   .grp { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
-  .glabel { font-size:11px; text-transform:uppercase; letter-spacing:.07em; color:var(--muted); min-width:74px; }
-  .modes { display:inline-flex; background:var(--control); border-radius:9px; padding:3px; gap:2px; }
-  .mode { padding:7px 13px; font-size:14px; font-weight:600; color:var(--muted); background:transparent; }
-  .mode.on { background:var(--raised); color:var(--accent-ink); box-shadow:0 1px 3px var(--shadow); }
+  .glabel { font-size:11px; text-transform:uppercase; letter-spacing:.07em; color:var(--muted);
+  min-width:74px; }
+  .modes { display:inline-flex; background:var(--control); border-radius:9px; padding:3px;
+  gap:2px; }
+  .mode { padding:7px 13px; font-size:14px; font-weight:600; color:var(--muted);
+  background:transparent; }
+  .mode.on { background:var(--raised); color:var(--accent-ink); box-shadow:0 1px 3px
+  var(--shadow); }
   .modehint { flex:1 1 240px; min-width:0; font-size:13px; color:var(--muted); font-style:italic; }
-  .pill { font-size:13px; color:var(--muted); background:var(--control); padding:6px 12px; border-radius:20px; }
+  .pill { font-size:13px; color:var(--muted); background:var(--control); padding:6px 12px;
+  border-radius:20px; }
   .pill b { color:var(--accent-ink); }
-  .step { display:inline-flex; align-items:center; gap:7px; font-size:13px; color:var(--ink); background:var(--control2); padding:4px 6px 4px 12px; border-radius:20px; }
+  .step { display:inline-flex; align-items:center; gap:7px; font-size:13px; color:var(--ink);
+  background:var(--control2); padding:4px 6px 4px 12px; border-radius:20px; }
   .step b { min-width:12px; text-align:center; font-size:14px; color:var(--ink); }
-  .step button { width:24px; height:24px; border-radius:50%; background:var(--raised); color:var(--muted); font-size:17px; line-height:22px; text-align:center; box-shadow:0 1px 2px var(--shadow); }
+  .step button { width:24px; height:24px; border-radius:50%; background:var(--raised);
+  color:var(--muted); font-size:17px; line-height:22px; text-align:center; box-shadow:0 1px 2px
+  var(--shadow); }
   .step button:hover { color:var(--accent-ink); }
   .total { font-size:12px; color:var(--muted); }
   .total.warn { color:var(--warn); font-weight:600; }
   .bar { display:flex; gap:10px 14px; align-items:center; flex-wrap:wrap; }
-  #copy { margin-left:auto; padding:9px 22px; background:var(--accent); color:#fff; font-size:14px; font-weight:700; }
+  #copy { margin-left:auto; padding:9px 22px; background:var(--accent); color:#fff;
+  font-size:14px; font-weight:700; }
   #copy:hover { filter:brightness(1.07); }
   .chips { flex:1 1 320px; min-width:0; display:flex; gap:7px; flex-wrap:wrap; align-items:center; }
-  .chip { font-size:12px; padding:4px 11px; border-radius:16px; border:0; color:#fff; background:var(--cc); font-weight:600; cursor:pointer; }
+  .chip { font-size:12px; padding:4px 11px; border-radius:16px; border:0; color:#fff;
+  background:var(--cc); font-weight:600; cursor:pointer; }
   .chip:hover { filter:brightness(1.08); }
-  .banner { max-height:0; overflow:hidden; transition:max-height .25s ease, padding .22s ease, margin .22s ease; background:linear-gradient(90deg,var(--accent),#8275f2); color:#fff; border-radius:10px; font-weight:700; text-align:center; padding:0 14px; }
+  .banner { max-height:0; overflow:hidden; transition:max-height .25s ease, padding .22s ease,
+  margin .22s ease; background:linear-gradient(90deg,var(--accent),#8275f2); color:#fff;
+  border-radius:10px; font-weight:700; text-align:center; padding:0 14px; }
   .banner.show { max-height:64px; padding:13px 14px; margin-top:10px; }
   .banner.fail { background:linear-gradient(90deg,var(--warn),#e0894a); }
   main { padding:18px 24px 60px; max-width:1120px; margin:0 auto; }
   section { margin:0 0 26px; }
-  section > h2 { font-size:13px; text-transform:uppercase; letter-spacing:.08em; color:var(--c); margin:0 0 10px; border-bottom:1px solid color-mix(in srgb, var(--c) 24%, var(--line)); padding-bottom:6px; }
+  section > h2 { font-size:13px; text-transform:uppercase; letter-spacing:.08em;
+  color:var(--c); margin:0 0 10px; border-bottom:1px solid color-mix(in srgb, var(--c) 24%,
+  var(--line)); padding-bottom:6px; }
   section > h2 .cnt { color:color-mix(in srgb, var(--c) 45%, var(--cnt)); margin-left:6px; }
   .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(360px,1fr)); gap:10px; }
-  label.tech { display:flex; gap:12px; align-items:flex-start; background:color-mix(in srgb, var(--c) 5%, var(--surface)); border:1px solid color-mix(in srgb, var(--c) 18%, var(--line)); border-radius:10px; padding:11px 13px; cursor:pointer; transition:border-color .12s, box-shadow .12s, background .12s; }
+  label.tech { display:flex; gap:12px; align-items:flex-start; background:color-mix(in srgb,
+  var(--c) 5%, var(--surface)); border:1px solid color-mix(in srgb, var(--c) 18%, var(--line));
+  border-radius:10px; padding:11px 13px; cursor:pointer; transition:border-color .12s,
+  box-shadow .12s, background .12s; }
   label.tech:hover { border-color:color-mix(in srgb, var(--c) 45%, var(--surface)); }
   label.tech input { margin-top:2px; width:17px; height:17px; accent-color:var(--c); flex:none; }
-  label.tech:has(input:checked) { border-color:var(--c); background:color-mix(in srgb, var(--c) 12%, var(--surface)); box-shadow:0 0 0 2px color-mix(in srgb, var(--c) 30%, transparent); }
+  label.tech:has(input:checked) { border-color:var(--c); background:color-mix(in srgb, var(--c)
+  12%, var(--surface)); box-shadow:0 0 0 2px color-mix(in srgb, var(--c) 30%, transparent); }
   .tech .ic2 { display:flex; gap:5px; flex:none; }
   .tech .ico { width:40px; height:40px; flex:none; color:var(--c); }
   .tech .n { font-weight:600; display:block; }
   .tech .d { color:var(--muted); font-size:13.5px; display:block; margin-top:2px; }
   .tech .gf { color:var(--accent-ink); font-size:11px; display:block; margin-top:5px; opacity:.85; }
-  .grouphdr { margin:30px 0 12px; font-size:12px; text-transform:uppercase; letter-spacing:.14em; font-weight:700; color:var(--c); opacity:.92; border-bottom:1px solid color-mix(in srgb, var(--c) 22%, var(--line)); padding-bottom:7px; }
+  .grouphdr { margin:30px 0 12px; font-size:12px; text-transform:uppercase;
+  letter-spacing:.14em; font-weight:700; color:var(--c); opacity:.92; border-bottom:1px solid
+  color-mix(in srgb, var(--c) 22%, var(--line)); padding-bottom:7px; }
   main > .grouphdr:first-child { margin-top:2px; }
   :root[data-theme="dark"] .grouphdr { color:color-mix(in srgb, var(--c) 62%, #fff); }
   .goals { display:flex; gap:7px; flex-wrap:wrap; }
-  .goal { font-size:12px; padding:5px 12px; border-radius:16px; background:var(--control); color:var(--muted); font-weight:600; }
+  .goal { font-size:12px; padding:5px 12px; border-radius:16px; background:var(--control);
+  color:var(--muted); font-weight:600; }
   .goal:hover { color:var(--ink); }
   .goal.on { background:var(--accent); color:#fff; }
   label.tech.invent { border-style:dashed; background:transparent; }
@@ -330,9 +373,11 @@ SELECTOR_TEMPLATE = r"""<!DOCTYPE html>
   <div class="hwrap">
   <div class="titlerow">
     <h1>BMad Method Brainstorming Selection</h1>
-    <button id="theme" class="themebtn" type="button" aria-label="Toggle dark mode" title="Toggle dark mode"></button>
+    <button id="theme" class="themebtn" type="button" aria-label="Toggle dark mode"
+  title="Toggle dark mode"></button>
   </div>
-  <p class="sub">Compose your session, hit <strong>Copy prompt</strong>, and paste it back into the chat to begin. {{TOTAL}}</p>
+  <p class="sub">Compose your session, hit <strong>Copy prompt</strong>, and paste it back into
+  the chat to begin. {{TOTAL}}</p>
 
   <div class="composer">
     <div class="grp">
@@ -347,9 +392,15 @@ SELECTOR_TEMPLATE = r"""<!DOCTYPE html>
     <div class="grp">
       <span class="glabel">Techniques</span>
       <span class="pill">Picked <b id="pickN">0</b></span>
-      <span class="step">Random <button type="button" data-step="rand" data-d="-1">&minus;</button><b id="randN">0</b><button type="button" data-step="rand" data-d="1">+</button></span>
-      <span class="step">Invent <button type="button" data-step="inv" data-d="-1">&minus;</button><b id="invN">0</b><button type="button" data-step="inv" data-d="1">+</button></span>
-      <span class="step">AI picks <button type="button" data-step="ai" data-d="-1">&minus;</button><b id="aiN">0</b><button type="button" data-step="ai" data-d="1">+</button></span>
+      <span class="step">Random <button type="button" data-step="rand"
+  data-d="-1">&minus;</button><b id="randN">0</b><button type="button" data-step="rand"
+  data-d="1">+</button></span>
+      <span class="step">Invent <button type="button" data-step="inv"
+  data-d="-1">&minus;</button><b id="invN">0</b><button type="button" data-step="inv"
+  data-d="1">+</button></span>
+      <span class="step">AI picks <button type="button" data-step="ai"
+  data-d="-1">&minus;</button><b id="aiN">0</b><button type="button" data-step="ai"
+  data-d="1">+</button></span>
       <span class="total" id="total">Total 0 &middot; 3&ndash;4 is the sweet spot</span>
       <button id="copy" type="button">Copy prompt</button>
     </div>
@@ -361,7 +412,8 @@ SELECTOR_TEMPLATE = r"""<!DOCTYPE html>
     <div class="chips" id="chips">{{CHIPS}}</div>
   </div>
 
-  <div class="banner" id="banner">&#10003; Copied! Now paste it into the chat to start your session.</div>
+  <div class="banner" id="banner">&#10003; Copied! Now paste it into the chat to start your
+  session.</div>
   </div>
 </header>
 <main>
@@ -373,20 +425,27 @@ SELECTOR_TEMPLATE = r"""<!DOCTYPE html>
   var $ = function(id){ return document.getElementById(id); };
   var all = Array.prototype.slice;
   var boxes = all.call(document.querySelectorAll('input[type=checkbox]'));
-  var techBoxes = boxes.filter(function(b){ return b.dataset.name; });      // real technique cards
-  var inventBoxes = boxes.filter(function(b){ return b.dataset.invent; });  // per-category "invent in the spirit of" cards
+  var techBoxes = boxes.filter(function(b){ return b.dataset.name; });
+  // Real technique cards.
+  var inventBoxes = boxes.filter(function(b){ return b.dataset.invent; });
+  // Per-category "invent in the spirit of" cards.
   var header = document.querySelector('header');
   var sections = all.call(document.querySelectorAll('section'));
   var state = { mode: 'Facilitator', rand: 0, inv: 0, ai: 0 };
   var MODE_HINTS = {
     'Facilitator': 'A forcing function for your ideas — I prompt and push, but never supply them.',
-    'Creative Partner': 'We riff together — I facilitate and add ideas too, each logged as yours or mine.',
-    'Ideate for me': 'I run the whole session myself, then show you the result and offer to keep going.'
+    'Creative Partner': 'We riff together — I facilitate and add ideas too, ' +
+      'each logged as yours or mine.',
+    'Ideate for me': 'I run the whole session myself, then show you the result ' +
+      'and offer to keep going.'
   };
   function setHint(){ $('modehint').textContent = MODE_HINTS[state.mode] || ''; }
 
   var themeBtn = $('theme');
-  function setThemeIcon(){ themeBtn.textContent = document.documentElement.getAttribute('data-theme') === 'dark' ? '☀' : '☾'; }
+  function setThemeIcon(){
+    themeBtn.textContent = document.documentElement.getAttribute('data-theme') === 'dark'
+      ? '☀' : '☾';
+  }
   themeBtn.addEventListener('click', function(){
     var next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
     document.documentElement.setAttribute('data-theme', next);
@@ -396,7 +455,9 @@ SELECTOR_TEMPLATE = r"""<!DOCTYPE html>
 
   all.call(document.querySelectorAll('.mode')).forEach(function(b){
     b.addEventListener('click', function(){
-      all.call(document.querySelectorAll('.mode')).forEach(function(m){ m.classList.remove('on'); });
+      all.call(document.querySelectorAll('.mode')).forEach(function(m){
+        m.classList.remove('on');
+      });
       b.classList.add('on');
       state.mode = b.dataset.mode;
       setHint();
@@ -416,7 +477,11 @@ SELECTOR_TEMPLATE = r"""<!DOCTYPE html>
   all.call(document.querySelectorAll('.chip')).forEach(function(chip){
     chip.addEventListener('click', function(){
       var sec = null;
-      for (var i = 0; i < sections.length; i++){ if (sections[i].dataset.cat === chip.dataset.cat){ sec = sections[i]; break; } }
+      for (var i = 0; i < sections.length; i++){
+        if (sections[i].dataset.cat === chip.dataset.cat){
+          sec = sections[i]; break;
+        }
+      }
       if (!sec){ return; }
       var top = sec.getBoundingClientRect().top + window.pageYOffset - header.offsetHeight - 8;
       window.scrollTo({ top: top, behavior: 'smooth' });
@@ -445,7 +510,8 @@ SELECTOR_TEMPLATE = r"""<!DOCTYPE html>
     $('randN').textContent = state.rand;
     $('invN').textContent = state.inv;
     $('aiN').textContent = state.ai;
-    var total = checkedTech().length + state.rand + state.inv + checkedInvent().length + state.ai;
+    var total = checkedTech().length + state.rand + state.inv +
+      checkedInvent().length + state.ai;
     var t = $('total');
     t.textContent = 'Total ' + total + ' · 3–4 is the sweet spot';
     t.classList.toggle('warn', total > 5);
@@ -453,52 +519,76 @@ SELECTOR_TEMPLATE = r"""<!DOCTYPE html>
 
   // "Great for" goal filter: clicking a goal narrows visible cards to those tagged with it.
   var goalBtns = all.call(document.querySelectorAll('.goal'));
-  function activeGoals(){ return goalBtns.filter(function(b){ return b.classList.contains('on'); }).map(function(b){ return b.dataset.goal; }); }
+  function activeGoals(){
+    return goalBtns.filter(function(b){ return b.classList.contains('on'); })
+      .map(function(b){ return b.dataset.goal; });
+  }
   function applyFilter(){
     var act = activeGoals();
     all.call(document.querySelectorAll('label.tech')).forEach(function(lab){
       var inp = lab.querySelector('input');
-      if (inp.dataset.invent){ return; }  // invent cards aren't goal-tagged — always visible
+      if (inp.dataset.invent){ return; }
+      // Invent cards aren't goal-tagged — always visible.
       var good = (inp.dataset.good || '').split('|');
       var show = !act.length || act.some(function(g){ return good.indexOf(g) >= 0; });
       lab.classList.toggle('hidden', !show);
     });
   }
-  goalBtns.forEach(function(b){ b.addEventListener('click', function(){ b.classList.toggle('on'); applyFilter(); }); });
+  goalBtns.forEach(function(b){
+    b.addEventListener('click', function(){ b.classList.toggle('on'); applyFilter(); });
+  });
 
   function randomPool(){
     var picked = {};
     checkedTech().forEach(function(b){ picked[b.dataset.name] = 1; });
     // draw from unchecked, non-lead copies, skipping anything already picked
-    return techBoxes.filter(function(b){ return !b.checked && !b.dataset.lead && !picked[b.dataset.name]; });
+    return techBoxes.filter(function(b){
+      return !b.checked && !b.dataset.lead && !picked[b.dataset.name];
+    });
   }
 
   function sample(arr, n){
     var a = arr.slice(), out = [];
-    while (out.length < n && a.length){ out.push(a.splice(Math.floor(Math.random() * a.length), 1)[0]); }
+    while (out.length < n && a.length){
+      out.push(a.splice(Math.floor(Math.random() * a.length), 1)[0]);
+    }
     return out;
   }
 
   function compose(){
-    var picks = checkedTech().map(function(b){ return { n: b.dataset.name, c: b.dataset.cat, d: b.dataset.desc, r: false }; });
-    var rnd = sample(randomPool(), state.rand).map(function(b){ return { n: b.dataset.name, c: b.dataset.cat, d: b.dataset.desc, r: true }; });
+    var picks = checkedTech().map(function(b){
+      return { n: b.dataset.name, c: b.dataset.cat, d: b.dataset.desc, r: false };
+    });
+    var rnd = sample(randomPool(), state.rand).map(function(b){
+      return { n: b.dataset.name, c: b.dataset.cat, d: b.dataset.desc, r: true };
+    });
     var techs = picks.concat(rnd);
     var L = ["Let's run my brainstorming session.", "", 'Facilitation mode: ' + state.mode + '.'];
     if (techs.length){
       L.push("", 'Techniques to use:');
       techs.forEach(function(t, i){
-        L.push((i + 1) + '.' + (t.r ? ' (random pick)' : '') + ' ' + t.n + '  ·  ' + t.c);
+        L.push((i + 1) + '.' + (t.r ? ' (random pick)' : '') + ' ' +
+          t.n + '  ·  ' + t.c);
         L.push('   ' + t.d);
       });
     }
     var extra = [];
-    if (state.inv > 0){ extra.push('invent ' + state.inv + ' brand-new technique' + (state.inv > 1 ? 's' : '') + ' on the fly'); }
-    checkedInvent().forEach(function(b){ extra.push('invent 1 new technique in the spirit of ' + b.dataset.invent); });
-    if (state.ai > 0){ extra.push('you choose ' + state.ai + ' more technique' + (state.ai > 1 ? 's' : '') + ' that fit my goal'); }
+    if (state.inv > 0){
+      extra.push('invent ' + state.inv + ' brand-new technique' +
+        (state.inv > 1 ? 's' : '') + ' on the fly');
+    }
+    checkedInvent().forEach(function(b){
+      extra.push('invent 1 new technique in the spirit of ' + b.dataset.invent);
+    });
+    if (state.ai > 0){
+      extra.push('you choose ' + state.ai + ' more technique' +
+        (state.ai > 1 ? 's' : '') + ' that fit my goal');
+    }
     if (extra.length){ L.push("", 'Then: ' + extra.join('; and ') + '.'); }
     if (!techs.length && !extra.length){
       L.push("", state.mode === 'Ideate for me'
-        ? 'Run the whole session yourself — pick the techniques, generate the ideas, then show me the result.'
+        ? 'Run the whole session yourself — pick the techniques, generate the ideas, ' +
+          'then show me the result.'
         : 'Help me choose 3–4 techniques to start.');
     }
     return L.join('\n');
@@ -554,7 +644,10 @@ LEAD_HUE = "#3d4f73"  # a dignified slate for the professional lead group
 # via --extra) render last under "More", alphabetically — so custom catalogs always show.
 CATEGORY_GROUPS = (
     ("Structured & Analytical", ("structured", "deep")),
-    ("Creative & Generative", ("creative", "biomimetic", "cultural", "speculative_future", "quantum")),
+    (
+        "Creative & Generative",
+        ("creative", "biomimetic", "cultural", "speculative_future", "quantum"),
+    ),
     ("Wild & Playful", ("wild", "absurdist", "theatrical", "constraint")),
     ("Introspective & Personal", ("introspective_delight", "collaborative")),
 )
@@ -577,7 +670,10 @@ def _good_for_label(good: str) -> str:
 
 
 def _svg(inner: str) -> str:
-    return f'<svg class="ico" viewBox="0 0 44 44" xmlns="http://www.w3.org/2000/svg">{CHIP}{inner}</svg>'
+    return (
+        f'<svg class="ico" viewBox="0 0 44 44" xmlns="http://www.w3.org/2000/svg">'
+        f'{CHIP}{inner}</svg>'
+    )
 
 
 def _card(r: dict, lead: bool = False) -> str:
@@ -595,8 +691,10 @@ def _card(r: dict, lead: bool = False) -> str:
     gf_html = f'<span class="gf">{html.escape(gf)}</span>' if gf else ""
     return (
         f'<label class="tech"{style}><input type="checkbox" '
-        f'data-name="{name}" data-cat="{disp_cat}" data-desc="{desc}" data-good="{good}" data-prov="{prov}"{lead_attr}>'
-        f'<span class="ic2">{_svg(glyph)}{_svg(tech_icon(r["technique_name"]))}</span>'
+        f'data-name="{name}" data-cat="{disp_cat}" data-desc="{desc}"'
+        f'data-good="{good}" data-prov="{prov}"{lead_attr}>'
+        f'<span class="ic2">{_svg(glyph)}'
+        f'{_svg(tech_icon(r["technique_name"]))}</span>'
         f'<span><span class="n">{name}</span><span class="d">{desc}</span>{gf_html}</span></label>'
     )
 
@@ -607,7 +705,9 @@ def _invent_card(disp_cat: str, glyph: str) -> str:
         f'<label class="tech invent"><input type="checkbox" data-invent="{disp_cat}">'
         f'<span class="ic2">{_svg(glyph)}</span>'
         f'<span><span class="n">✨ Invent a {disp_cat} technique</span>'
-        f'<span class="d">Make up a brand-new technique on the fly, in the spirit of {disp_cat}</span></span></label>'
+        f'<span class="d">Make up a brand-new technique on the fly, '
+        f'in the spirit of {disp_cat}</span>'
+        f'</span></label>'
     )
 
 
@@ -632,9 +732,13 @@ def html_doc(rows: list[dict]) -> str:
         disp = html.escape(pretty(cat))
         cards = [_card(r) for r in groups[cat]]
         cards.append(_invent_card(disp, glyph))
-        chips.append(f'<button type="button" class="chip" data-cat="{disp}" style="--cc:{hue}">{disp}</button>')
+        chips.append(
+            f'<button type="button" class="chip" data-cat="{disp}" '
+            f'style="--cc:{hue}">{disp}</button>'
+        )
         body.append(
-            f'<section data-cat="{disp}" style="--c:{hue}"><h2>{disp}<span class="cnt">{len(groups[cat])}</span></h2>'
+            f'<section data-cat="{disp}" style="--c:{hue}">'
+            f'<h2>{disp}<span class="cnt">{len(groups[cat])}</span></h2>'
             f'<div class="grid">{"".join(cards)}</div></section>'
         )
 
@@ -643,9 +747,13 @@ def html_doc(rows: list[dict]) -> str:
     if classics:
         disp = html.escape(CLASSIC_GROUP)
         lead_cards = "".join(_card(r, lead=True) for r in classics)
-        chips.append(f'<button type="button" class="chip" data-cat="{disp}" style="--cc:{LEAD_HUE}">{disp}</button>')
+        chips.append(
+            f'<button type="button" class="chip" data-cat="{disp}" '
+            f'style="--cc:{LEAD_HUE}">{disp}</button>'
+        )
         body.append(
-            f'<section data-cat="{disp}" style="--c:{LEAD_HUE}"><h2>{disp}<span class="cnt">{len(classics)}</span></h2>'
+            f'<section data-cat="{disp}" style="--c:{LEAD_HUE}">'
+            f'<h2>{disp}<span class="cnt">{len(classics)}</span></h2>'
             f'<div class="grid">{lead_cards}</div></section>'
         )
 
@@ -676,12 +784,18 @@ def html_doc(rows: list[dict]) -> str:
                 present_goals.add(g)
     goalbar = ""
     if present_goals:
-        ordered = [g for g in GOAL_LABELS if g in present_goals] + sorted(present_goals - set(GOAL_LABELS))
+        ordered = [g for g in GOAL_LABELS if g in present_goals] + sorted(
+            present_goals - set(GOAL_LABELS)
+        )
         gchips = "".join(
-            f'<button type="button" class="goal" data-goal="{html.escape(g)}">{html.escape(GOAL_LABELS.get(g, g))}</button>'
+            f'<button type="button" class="goal" data-goal="{html.escape(g)}">'
+            f'{html.escape(GOAL_LABELS.get(g, g))}</button>'
             for g in ordered
         )
-        goalbar = f'<div class="bar"><span class="glabel">Great for</span><div class="goals" id="goals">{gchips}</div></div>'
+        goalbar = (
+            f'<div class="bar"><span class="glabel">Great for</span>'
+            f'<div class="goals" id="goals">{gchips}</div></div>'
+        )
 
     total = html.escape(f"{len(rows)} techniques across {len(groups)} categories.")
     return (
@@ -693,15 +807,28 @@ def html_doc(rows: list[dict]) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--file", type=Path, default=DEFAULT_FILE, help="technique CSV (default: sibling assets/brain-methods.csv)")
-    p.add_argument("--extra", type=Path, help="JSON overlay of additional techniques (customize.toml additional_techniques), merged into every command")
+    p = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    p.add_argument(
+        "--file", type=Path, default=DEFAULT_FILE,
+        help="technique CSV (default: sibling assets/brain-methods.csv)"
+    )
+    p.add_argument(
+        "--extra", type=Path,
+        help=(
+            "JSON overlay of additional techniques (customize.toml additional_techniques), "
+            "merged into every command"
+        )
+    )
     p.add_argument("--json", action="store_true", help="emit structured JSON instead of lean text")
     sub = p.add_subparsers(dest="cmd", required=True)
     sub.add_parser("categories", help="list category names + counts")
     pl = sub.add_parser("list", help="the index: category/name/gist (needs --category or --all)")
     pl.add_argument("--category", action="append", help="filter to a category (repeatable)")
-    pl.add_argument("--all", action="store_true", help="dump the entire catalog (deliberate; large)")
+    pl.add_argument(
+        "--all", action="store_true", help="dump the entire catalog (deliberate; large)"
+    )
     ps = sub.add_parser("show", help="full gist + detail file for named techniques")
     ps.add_argument("names", nargs="+")
     pr = sub.add_parser("random", help="pick techniques at random")
@@ -732,7 +859,8 @@ def main(argv: list[str] | None = None) -> int:
         if not args.category and not args.all:
             print(
                 "error: `list` needs --category (one or more) — or --all to dump the whole "
-                "catalog on purpose. Use `categories` for the cheap map, or `random` to draw blind.",
+                "catalog on purpose. Use `categories` for the cheap map, or "
+                "`random` to draw blind.",
                 file=sys.stderr,
             )
             return 2

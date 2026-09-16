@@ -19,7 +19,7 @@ from backend.models.iii_collection import (
     IIICollectionExpectedKeyReportV1,
     IIICollectionIngressReceiptV1,
 )
-from backend.odp.query_client import OdpQueryUnavailable, OdpRecordKey
+from backend.odp.query_client import OdpQueryUnavailableError, OdpRecordKey
 from backend.security.identity import RequestIdentity, get_request_identity
 from backend.workflow.evidence_batch_materialization_facts import receipt_outcomes
 from backend.workflow.evidence_batch_materializer import (

@@ -119,7 +119,9 @@ class TestPRControl3StateBranches:
     over its arguments only."""
 
     def test_auth_failed_takes_top_precedence(self):
-        m = _measurement(error_kinds={"auth_failed": 1, "rate_limited": 1, "schema_drift": 1})
+        m = _measurement(
+            error_kinds={"auth_failed": 1, "rate_limited": 1, "schema_drift": 1}
+        )
         assert evaluate(m, SourceObjective()) is SourceControlState.AUTH_FAILED
 
     def test_rate_limited_from_this_runs_error_kinds(self):

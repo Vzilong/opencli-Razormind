@@ -55,7 +55,7 @@ class OdpRecordKey:
 
     def to_wire(self) -> dict[str, str]:
         if not self.event_id or len(self.event_id) > 512:
-            raise OdpQueryRejected("ODP reconciliation request was rejected")
+            raise OdpQueryRejectedError("ODP reconciliation request was rejected")
         return {"source_id": str(self.source_id), "event_id": self.event_id}
 
 
@@ -101,7 +101,7 @@ class OdpReconciliationDelegation:
             or len(self.allowed_modes) != len(set(self.allowed_modes))
             or any(mode not in {"exact", "attempt_page", "dlq"} for mode in self.allowed_modes)
         ):
-            raise OdpQueryRejected("ODP reconciliation request was rejected")
+            raise OdpQueryRejectedError("ODP reconciliation request was rejected")
         expires_at = _rfc3339_utc(self.expires_at)
         if self.expires_at.astimezone(UTC) <= datetime.now(UTC):
             raise OdpQueryRejected("ODP reconciliation request was rejected")
@@ -146,11 +146,11 @@ def build_attempt_page_request(
 ) -> dict[str, Any]:
     scope = delegation.to_wire()
     if "attempt_page" not in delegation.allowed_modes:
-        raise OdpQueryRejected("ODP reconciliation request was rejected")
+        raise OdpQueryRejectedError("ODP reconciliation request was rejected")
     if cursor is not None and (not cursor or len(cursor) > MAX_CURSOR_LENGTH):
-        raise OdpQueryRejected("ODP reconciliation request was rejected")
+        raise OdpQueryRejectedError("ODP reconciliation request was rejected")
     if page_size is not None and not 1 <= page_size <= MAX_PAGE_SIZE:
-        raise OdpQueryRejected("ODP reconciliation request was rejected")
+        raise OdpQueryRejectedError("ODP reconciliation request was rejected")
     request: dict[str, Any] = {"delegation": scope, "mode": "attempt_page"}
     if cursor is not None:
         request["cursor"] = cursor
@@ -165,24 +165,24 @@ async def post_reconciliation_query(request: dict[str, Any]) -> dict[str, Any]:
     base_url = os.environ.get("ODP_QUERY_URL", "").strip().rstrip("/")
     credential = os.environ.get("ODP_QUERY_ADMIN_CREDENTIAL", "").strip()
     if not base_url or not credential:
-        raise OdpQueryUnavailable("ODP reconciliation is unavailable")
+        raise OdpQueryUnavailableError("ODP reconciliation is unavailable")
     try:
         async with httpx.AsyncClient(timeout=_timeout()) as client:
             response = await client.post(
-                f"{base_url}/internal/v1/evidence-records:query",
+                base_url,
                 headers={"Authorization": f"Bearer {credential}"},
                 json=request,
             )
     except httpx.HTTPError as exc:
-        raise OdpQueryUnavailable("ODP reconciliation is unavailable") from exc
+        raise OdpQueryUnavailableError("ODP reconciliation is unavailable") from exc
     if response.status_code >= 500:
-        raise OdpQueryUnavailable("ODP reconciliation is unavailable")
+        raise OdpQueryUnavailableError("ODP reconciliation is unavailable")
     if response.status_code >= 400:
-        raise OdpQueryRejected("ODP reconciliation request was rejected")
+        raise OdpQueryRejectedError("ODP reconciliation request was rejected")
     try:
         return sanitize_query_response(response.json(), request)
     except (TypeError, ValueError, KeyError) as exc:
-        raise OdpQueryUnavailable("ODP reconciliation is unavailable") from exc
+        raise OdpQueryUnavailableError("ODP reconciliation is unavailable") from exc
 
 
 def sanitize_query_response(payload: Any, request: dict[str, Any]) -> dict[str, Any]:
@@ -237,12 +237,12 @@ def _request_with_keys(
 ) -> dict[str, Any]:
     scope = delegation.to_wire()
     if mode not in delegation.allowed_modes or not 1 <= len(keys) <= MAX_KEYS:
-        raise OdpQueryRejected("ODP reconciliation request was rejected")
+        raise OdpQueryRejectedError("ODP reconciliation request was rejected")
     if len(set(keys)) != len(keys):
-        raise OdpQueryRejected("ODP reconciliation request was rejected")
+        raise OdpQueryRejectedError("ODP reconciliation request was rejected")
     allowed_sources = set(delegation.allowed_source_ids)
     if any(key.source_id not in allowed_sources for key in keys):
-        raise OdpQueryRejected("ODP reconciliation request was rejected")
+        raise OdpQueryRejectedError("ODP reconciliation request was rejected")
     return {"delegation": scope, "mode": mode, "keys": [key.to_wire() for key in keys]}
 
 

@@ -20,7 +20,9 @@ from tests.integration.iii_collection_test_support import create_scoped_run
 
 def _record_ref_set_hash() -> str:
     return hashlib.sha256(
-        json.dumps([["source-1", "event-1", 1]], separators=(",", ":"), sort_keys=True).encode()
+        json.dumps(
+            [["source-1", "event-1", 1]], separators=(",", ":"), sort_keys=True
+        ).encode()
     ).hexdigest()
 
 

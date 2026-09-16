@@ -4,7 +4,7 @@ import urllib.parse
 
 
 def main():
-    sys.stdout.reconfigure(encoding='utf-8', newline='\n')
+    sys.stdout.reconfigure(encoding="utf-8", newline="\n")
     parser = argparse.ArgumentParser(
         description=(
             "Build X search URL from a raw query and optional advanced filters"
@@ -131,52 +131,52 @@ def main():
     def add_clause(clause):
         nonlocal q
         if clause and clause not in q:
-            q = (q + ' ' + clause).strip()
+            q = (q + " " + clause).strip()
 
     if args.language:
-        add_clause(f'lang:{args.language}')
+        add_clause(f"lang:{args.language}")
     if args.min_retweets is not None:
-        add_clause(f'min_retweets:{args.min_retweets}')
+        add_clause(f"min_retweets:{args.min_retweets}")
     if args.min_faves is not None:
-        add_clause(f'min_faves:{args.min_faves}')
+        add_clause(f"min_faves:{args.min_faves}")
     if args.min_replies is not None:
-        add_clause(f'min_replies:{args.min_replies}')
+        add_clause(f"min_replies:{args.min_replies}")
     if args.since:
-        add_clause(f'since:{args.since}')
+        add_clause(f"since:{args.since}")
     if args.until:
-        add_clause(f'until:{args.until}')
+        add_clause(f"until:{args.until}")
     if args.author:
-        add_clause(f'from:{args.author.lstrip("@")}')
+        add_clause(f"from:{args.author.lstrip('@')}")
     if args.in_reply_to:
-        add_clause(f'to:{args.in_reply_to.lstrip("@")}')
+        add_clause(f"to:{args.in_reply_to.lstrip('@')}")
     if args.mentioning:
-        add_clause(f'@{args.mentioning.lstrip("@")}')
+        add_clause(f"@{args.mentioning.lstrip('@')}")
     if args.only_verified:
-        add_clause('filter:verified')
+        add_clause("filter:verified")
     if args.only_blue_verified:
-        add_clause('filter:blue_verified')
+        add_clause("filter:blue_verified")
     if args.only_image:
-        add_clause('filter:images')
+        add_clause("filter:images")
     if args.only_video:
-        add_clause('filter:native_video')
+        add_clause("filter:native_video")
     if args.only_quote:
-        add_clause('filter:quote')
+        add_clause("filter:quote")
     if args.exclude_retweets:
-        add_clause('-filter:retweets')
+        add_clause("-filter:retweets")
     if args.exclude_replies:
-        add_clause('-filter:replies')
+        add_clause("-filter:replies")
     if args.geocode:
-        add_clause(f'geocode:{args.geocode}')
+        add_clause(f"geocode:{args.geocode}")
     if args.near:
         add_clause(f'near:"{args.near}"')
     if args.within:
-        add_clause(f'within:{args.within}')
+        add_clause(f"within:{args.within}")
 
-    f_param = 'live' if args.sort == 'Latest' else 'top'
-    encoded_q = urllib.parse.quote(q, safe='')
-    url = f'https://x.com/search?q={encoded_q}&src=typed_query&f={f_param}'
+    f_param = "live" if args.sort == "Latest" else "top"
+    encoded_q = urllib.parse.quote(q, safe="")
+    url = f"https://x.com/search?q={encoded_q}&src=typed_query&f={f_param}"
     print(url)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

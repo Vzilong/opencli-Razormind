@@ -143,7 +143,7 @@ def _write_action_fixture(tmp_path):
 
 def _load(path):
     yaml = YAML(typ="rt")
-    with open(path, "r", encoding="utf-8") as fh:
+    with open(path, encoding="utf-8") as fh:
         return yaml.load(fh)
 
 

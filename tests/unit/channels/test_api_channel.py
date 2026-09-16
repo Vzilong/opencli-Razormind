@@ -528,7 +528,6 @@ async def test_fetch_no_source_id_skips_credential_store(channel, monkeypatch):
         source_id=None,
         http=http,
     )
-
     with patch("backend.auth.manager.AuthManager.resolve") as mock_resolve:
         await channel.fetch(ctx)
 

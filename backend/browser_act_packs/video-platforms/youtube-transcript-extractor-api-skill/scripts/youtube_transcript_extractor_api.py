@@ -88,7 +88,10 @@ def run_youtube_transcript_extractor_task(api_key, target_url):
         time.sleep(10)
 
     if not finished:
-        print(f"Error: Task polling timed out after {max_poll_time} seconds.", flush=True)
+        print(
+            f"Error: Task polling timed out after {max_poll_time} seconds.",
+            flush=True,
+        )
         return None
 
     # 3. Get Results

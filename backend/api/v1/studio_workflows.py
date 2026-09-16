@@ -46,6 +46,7 @@ from backend.api.v1.workflows import (
 from backend.models.gaojixing_collection import GaojixingCollectionRun
 from backend.schemas.workflow_runtime import WorkflowRunStatus, WorkflowRunTraceResponse
 from backend.database import get_db, rollback_session
+from backend.models.gaojixing_collection import GaojixingCollectionRun
 from backend.models.studio import (
     StudioProject,
     StudioWorkflow,

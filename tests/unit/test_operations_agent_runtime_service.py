@@ -1,6 +1,6 @@
 import asyncio
-import pytest
 
+import pytest
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 

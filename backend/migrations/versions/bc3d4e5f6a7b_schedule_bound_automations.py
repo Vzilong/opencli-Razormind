@@ -72,7 +72,9 @@ def upgrade() -> None:
             "automations",
             sa.Column("operations_agent_version", sa.Integer(), nullable=True),
         )
-    if "automations" in tables and not has_index("automations", "ix_automations_operations_agent_id"):
+    if "automations" in tables and not has_index(
+        "automations", "ix_automations_operations_agent_id"
+    ):
         op.create_index(
             "ix_automations_operations_agent_id",
             "automations",

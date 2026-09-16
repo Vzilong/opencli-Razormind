@@ -37,8 +37,12 @@ def main():
 
     m = re.match(r'https://x\.com/i/lists/(\d+)', u)
     if m:
-        info.update(kind='list', endpoint='ListLatestTweetsTimeline',
-                    extract_source='list', params={'list_id': m.group(1)})
+        info.update(
+            kind='list',
+            endpoint='ListLatestTweetsTimeline',
+            extract_source='list',
+            params={'list_id': m.group(1)},
+        )
 
     m = re.match(r'https://x\.com/([^/]+)/status/(\d+)', u)
     if m:
@@ -51,13 +55,21 @@ def main():
 
     m = re.match(r'https://x\.com/([^/]+)/with_replies/?$', u)
     if m:
-        info.update(kind='user_replies', endpoint='UserTweetsAndReplies',
-                    extract_source='user_replies', params={'handle': m.group(1)})
+        info.update(
+            kind='user_replies',
+            endpoint='UserTweetsAndReplies',
+            extract_source='user_replies',
+            params={'handle': m.group(1)},
+        )
 
     m = re.match(r'https://x\.com/([^/]+)/media/?$', u)
     if m:
-        info.update(kind='user_media', endpoint='UserMedia',
-                    extract_source='user_media', params={'handle': m.group(1)})
+        info.update(
+            kind='user_media',
+            endpoint='UserMedia',
+            extract_source='user_media',
+            params={'handle': m.group(1)},
+        )
 
     m = re.match(r'https://x\.com/([^/]+)/?$', u)
     if m and info['kind'] == 'unknown':

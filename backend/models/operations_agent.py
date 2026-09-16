@@ -4,8 +4,8 @@ from enum import StrEnum
 from sqlalchemy import (
     JSON,
     Boolean,
-    DateTime,
     CheckConstraint,
+    DateTime,
     ForeignKey,
     Integer,
     String,

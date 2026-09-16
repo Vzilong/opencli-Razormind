@@ -61,11 +61,11 @@ def test_admin_transport_builds_only_a_bounded_delegated_exact_request():
 
 
 def test_admin_transport_rejects_browser_like_predicates_and_unsafe_scope():
-    with pytest.raises(OdpQueryRejected):
+    with pytest.raises(OdpQueryRejectedError):
         build_exact_request(scope(), [OdpRecordKey(UUID(int=99), "not-authorized")])
-    with pytest.raises(OdpQueryRejected):
+    with pytest.raises(OdpQueryRejectedError):
         build_attempt_page_request(scope(modes=("exact",)), page_size=1)
-    with pytest.raises(OdpQueryRejected):
+    with pytest.raises(OdpQueryRejectedError):
         build_attempt_page_request(scope(), page_size=101)
 
 
@@ -146,5 +146,5 @@ async def test_query_outage_is_redacted_when_admin_is_not_configured(monkeypatch
     monkeypatch.delenv("ODP_QUERY_URL", raising=False)
     monkeypatch.delenv("ODP_QUERY_ADMIN_CREDENTIAL", raising=False)
 
-    with pytest.raises(OdpQueryUnavailable, match="ODP reconciliation is unavailable"):
+    with pytest.raises(OdpQueryUnavailableError, match="ODP reconciliation is unavailable"):
         await post_reconciliation_query({"not": "a browser predicate"})

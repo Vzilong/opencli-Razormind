@@ -5,14 +5,15 @@ Revises: q4r5s6t7u8v9
 Create Date: 2026-09-02
 """
 
-from alembic import context, op
 import sqlalchemy as sa
-
+from alembic import context, op
 
 revision = "r5s6t7u8v9w0"
 down_revision = "q4r5s6t7u8v9"
 branch_labels = None
 depends_on = None
+
+
 def _collection_tasks_table(*, include_recovery_columns: bool) -> sa.Table:
     metadata = sa.MetaData()
     columns = [
@@ -34,7 +35,11 @@ def _collection_tasks_table(*, include_recovery_columns: bool) -> sa.Table:
                 sa.Column("recovery_mode", sa.String(length=32), nullable=True),
                 sa.Column("recovery_reason", sa.Text(), nullable=True),
                 sa.Column("initiating_actor", sa.String(length=255), nullable=True),
-                sa.Column("recovery_idempotency_key", sa.String(length=255), nullable=True),
+                sa.Column(
+                    "recovery_idempotency_key",
+                    sa.String(length=255),
+                    nullable=True,
+                ),
             ]
         )
     constraints = [
@@ -71,7 +76,10 @@ def _batch_kwargs(*, include_recovery_columns: bool) -> dict:
 
 
 def upgrade() -> None:
-    if not context.is_offline_mode() and not sa.inspect(op.get_bind()).has_table("collection_tasks"):
+    if (
+        not context.is_offline_mode()
+        and not sa.inspect(op.get_bind()).has_table("collection_tasks")
+    ):
         return
     with op.batch_alter_table(
         "collection_tasks", **_batch_kwargs(include_recovery_columns=False)
@@ -80,7 +88,9 @@ def upgrade() -> None:
         batch.add_column(sa.Column("recovery_mode", sa.String(32), nullable=True))
         batch.add_column(sa.Column("recovery_reason", sa.Text(), nullable=True))
         batch.add_column(sa.Column("initiating_actor", sa.String(255), nullable=True))
-        batch.add_column(sa.Column("recovery_idempotency_key", sa.String(255), nullable=True))
+        batch.add_column(
+            sa.Column("recovery_idempotency_key", sa.String(255), nullable=True)
+        )
         batch.create_foreign_key(
             "fk_collection_tasks_retry_of_task_id",
             "collection_tasks",
@@ -92,11 +102,18 @@ def upgrade() -> None:
             "uq_collection_tasks_recovery_idempotency_key",
             ["recovery_idempotency_key"],
         )
-    op.create_index("ix_collection_tasks_retry_of_task_id", "collection_tasks", ["retry_of_task_id"])
+    op.create_index(
+        "ix_collection_tasks_retry_of_task_id",
+        "collection_tasks",
+        ["retry_of_task_id"],
+    )
 
 
 def downgrade() -> None:
-    if not context.is_offline_mode() and not sa.inspect(op.get_bind()).has_table("collection_tasks"):
+    if (
+        not context.is_offline_mode()
+        and not sa.inspect(op.get_bind()).has_table("collection_tasks")
+    ):
         return
     op.drop_index("ix_collection_tasks_retry_of_task_id", table_name="collection_tasks")
     with op.batch_alter_table(

@@ -129,7 +129,10 @@ def find_ad_issues(body: str, offset: int) -> list[dict]:
             findings.append({
                 "category": "ad_id",
                 "severity": "high",
-                "detail": f"AD-{num} is non-monotonic (follows AD-{prev}); ids must ascend and never renumber",
+                "detail": (
+                    f"AD-{num} is non-monotonic (follows AD-{prev}); "
+                    "ids must ascend and never renumber"
+                ),
                 "location": loc,
             })
         prev = num if prev is None else max(prev, num)
@@ -228,20 +231,33 @@ def lint(text: str) -> dict:
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description="Lint an architecture spine for mechanical integrity.")
-    ap.add_argument("--workspace", required=True, help="run folder containing ARCHITECTURE-SPINE.md")
+    ap = argparse.ArgumentParser(
+        description="Lint an architecture spine for mechanical integrity."
+    )
+    ap.add_argument(
+        "--workspace", required=True, help="run folder containing ARCHITECTURE-SPINE.md"
+    )
     ap.add_argument("-o", "--output", help="write JSON here instead of stdout")
     args = ap.parse_args(argv)
-
     spine_path = Path(args.workspace) / SPINE
+
     if not spine_path.exists():
-        result = {"ok": False, "error": f"{spine_path} not found", "findings": [], "total_findings": 0}
+        result = {
+            "ok": False,
+            "error": f"{spine_path} not found",
+            "findings": [],
+            "total_findings": 0,
+        }
     else:
         try:
             text = spine_path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError) as e:
-            # honor the "exit code is always 0" contract: a read/decode failure travels in JSON
-            result = {"ok": False, "error": f"could not read {spine_path}: {e}", "findings": [], "total_findings": 0}
+            result = {
+                "ok": False,
+                "error": f"could not read {spine_path}: {e}",
+                "findings": [],
+                "total_findings": 0,
+            }
         else:
             result = lint(text)
 

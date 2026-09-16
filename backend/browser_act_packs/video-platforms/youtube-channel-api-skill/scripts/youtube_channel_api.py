@@ -76,7 +76,10 @@ def run_youtube_channel_task(api_key, keywords, upload_date="Any time"):
 
         time.sleep(10)
     else:
-        print(f"Error: Task polling timed out after {max_poll_time} seconds.", flush=True)
+        print(
+            f"Error: Task polling timed out after {max_poll_time} seconds.",
+            flush=True,
+        )
         return None
 
     # 3. Get Results

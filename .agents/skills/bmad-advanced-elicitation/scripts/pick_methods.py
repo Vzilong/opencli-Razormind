@@ -170,23 +170,59 @@ def fmt_rows(rows: list[dict], as_json: bool) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(encoding="utf-8")  # catalog rows contain →; don't die on locale code pages
-    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--file", type=Path, default=DEFAULT_FILE, help="method CSV (default: sibling assets/methods.csv)")
-    p.add_argument("--extra", help="additional methods: a JSON array literal or a path to a JSON file")
-    p.add_argument("--json", action="store_true", help="emit structured JSON instead of lean text")
+        sys.stdout.reconfigure(
+            encoding="utf-8"
+        )  # catalog rows contain →; don't die on locale code pages
+    p = argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    p.add_argument(
+        "--file",
+        type=Path,
+        default=DEFAULT_FILE,
+        help="method CSV (default: sibling assets/methods.csv)",
+    )
+    p.add_argument(
+        "--json",
+        action="store_true",
+        help="emit structured JSON instead of lean text",
+    )
     sub = p.add_subparsers(dest="cmd", required=True)
     sub.add_parser("categories", help="list category names + counts")
-    pl = sub.add_parser("list", help="the index for chosen categories (needs --category or --all)")
-    pl.add_argument("--category", action="append", help="filter to a category (repeatable)")
-    pl.add_argument("--all", action="store_true", help="dump the entire catalog (deliberate; large)")
+    pl = sub.add_parser(
+        "list",
+        help="the index for chosen categories (needs --category or --all)",
+    )
+    pl.add_argument(
+        "--category",
+        action="append",
+        help="filter to a category (repeatable)",
+    )
+    pl.add_argument(
+        "--all",
+        action="store_true",
+        help="dump the entire catalog (deliberate; large)",
+    )
     ps = sub.add_parser("show", help="full row for each named method")
     ps.add_argument("names", nargs="+", help="method names or nums")
     pr = sub.add_parser("random", help="draw methods at random")
     pr.add_argument("-n", type=int, default=1, help="how many (default 1)")
-    pr.add_argument("--category", action="append", help="restrict to a category (repeatable)")
-    pr.add_argument("--exclude", action="append", help="method name to skip (repeatable) — e.g. already shown")
-    pr.add_argument("--spread", action="store_true", help="force category diversity across the draw")
+    pr.add_argument(
+        "--category",
+        action="append",
+        help="restrict to a category (repeatable)",
+    )
+    pr.add_argument(
+        "--exclude",
+        action="append",
+        help="method name to skip (repeatable) — e.g. already shown",
+    )
+    pr.add_argument(
+        "--spread",
+        action="store_true",
+        help="force category diversity across the draw",
+    )
     args = p.parse_args(argv)
 
     if not args.file.is_file():
@@ -205,8 +241,9 @@ def main(argv: list[str] | None = None) -> int:
     elif args.cmd == "list":
         if not args.category and not args.all:
             print(
-                "error: `list` needs --category (one or more) — or --all to dump the whole "
-                "catalog on purpose. Use `categories` for the cheap map, or `random` to draw blind.",
+                "error: `list` needs --category (one or more) — or --all to dump "
+                "the whole catalog on purpose. Use `categories` for the cheap map, "
+                "or `random` to draw blind.",
                 file=sys.stderr,
             )
             return 2

@@ -71,7 +71,13 @@ async def test_authenticated_studio_review_rejects_self_review_and_pins_fold(cli
                 task_id="graph-task",
                 trace_id=scope["run"].trace_id,
                 item_count=1,
-                counts={"expected": 1, "record_present": 1, "rejected": 0, "dlq": 0, "unknown": 0},
+                counts={
+                    "expected": 1,
+                    "record_present": 1,
+                    "rejected": 0,
+                    "dlq": 0,
+                    "unknown": 0,
+                },
                 materialization_status="completed",
                 record_references=[
                     {
@@ -252,7 +258,13 @@ async def test_authenticated_studio_review_rejects_self_review_and_pins_fold(cli
                 task_id="graph-task",
                 trace_id="iii-trace",
                 item_count=1,
-                counts={"expected": 1, "record_present": 1, "rejected": 0, "dlq": 0, "unknown": 0},
+                counts={
+                    "expected": 1,
+                    "record_present": 1,
+                    "rejected": 0,
+                    "dlq": 0,
+                    "unknown": 0,
+                },
                 materialization_status="completed",
                 record_references=[
                     {
@@ -384,7 +396,13 @@ async def test_zero_and_partial_manifest_policy_fail_closed(db_session):
                 trace_id="iii-trace",
                 report_id=report.report_id,
                 item_count=2,
-                counts={"expected": 2, "record_present": 1, "rejected": 1, "dlq": 0, "unknown": 0},
+                counts={
+                    "expected": 2,
+                    "record_present": 1,
+                    "rejected": 1,
+                    "dlq": 0,
+                    "unknown": 0,
+                },
                 materialization_status="partial",
                 record_references=[
                     {

@@ -228,6 +228,8 @@ __all__ = [
     "EvidenceBatchMaterializationEventV1",
     "CanvasDocument",
     "CanvasSnapshot",
+    "IIICollectionExpectedKeyReportV1",
+    "IIICollectionIngressReceiptV1",
     "MediaAsset",
     "ImageGenerationJob",
     "ImageGenerationJobStatus",

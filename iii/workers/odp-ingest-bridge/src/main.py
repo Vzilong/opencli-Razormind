@@ -48,7 +48,10 @@ def _emit_ingress_receipt(receipt: dict[str, Any]) -> None:
         headers["x-iii-bridge-token"] = bridge_token
     try:
         response = httpx.post(
-            _admin_callback_url("ingress-receipts"), json=receipt, headers=headers, timeout=10.0
+            _admin_callback_url("ingress-receipts"),
+            json=receipt,
+            headers=headers,
+            timeout=10.0,
         )
         response.raise_for_status()
     except httpx.HTTPError as exc:

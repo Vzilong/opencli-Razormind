@@ -3,9 +3,17 @@ import sys
 
 
 def main():
-    sys.stdout.reconfigure(encoding='utf-8', newline='\n')
+    sys.stdout.reconfigure(
+        encoding='utf-8',
+        newline='\n',
+    )
     parser = argparse.ArgumentParser()
-    parser.add_argument('--max-items', type=int, default=0, help='Max items to return, 0 for all')
+    parser.add_argument(
+        '--max-items',
+        type=int,
+        default=0,
+        help='Max items to return, 0 for all',
+    )
     args = parser.parse_args()
 
     max_items = args.max_items

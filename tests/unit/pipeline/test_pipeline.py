@@ -602,7 +602,10 @@ async def test_run_pipeline_opencli_auto_binding(db_session):
         ),
         patch("backend.database.AsyncSessionLocal", return_value=browser_cm),
         patch("backend.pipeline.collector.collect", return_value=mock_channel_result),
-        patch("backend.pipeline.storer.store_records", new=AsyncMock(return_value=([], 0))),
+        patch(
+            "backend.pipeline.storer.store_records",
+            new=AsyncMock(return_value=([], 0)),
+        ),
     ):
         await run_pipeline(
             task.id,

@@ -1,5 +1,4 @@
 import subprocess
-
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -131,7 +130,9 @@ def test_browser_images_fail_closed_until_userscripts_access_is_verified():
     for entrypoint in (chrome_entrypoint, agent_entrypoint):
         assert "ensure-violentmonkey-userscripts-access.mjs" in entrypoint
         assert "violentmonkey_user_scripts_access" in entrypoint
-        assert 'VIOLENTMONKEY_VERSION="$(read_manifest_component_version violentmonkey)"' in entrypoint
+        assert (
+            'VIOLENTMONKEY_VERSION="$(read_manifest_component_version violentmonkey)"'
+        ) in entrypoint
         assert "rm -f /tmp/browser-runtime-report.json" in entrypoint
 
 

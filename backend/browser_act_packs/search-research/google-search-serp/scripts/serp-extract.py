@@ -38,7 +38,6 @@ def main():
           ? document.querySelector('#result-stats').textContent.trim()
           : null;
         var totalMatch = statsText ? statsText.match(/[\d,]+/) : null;
-        var resultsTotal = totalMatch ? totalMatch[0].replace(/,/g, '') : null;
 
         var organicResults = Array.from(document.querySelectorAll('.tF2Cxc')).map(function(el, i) {
           var desc = el.querySelector('.VwiC3b');
@@ -107,11 +106,15 @@ def main():
           return el.textContent.trim() === 'AI Overview';
         });
         if (aiHeadingPresent) {
-          var notAvailable = Array.from(document.querySelectorAll('span')).some(function(el) {
+          var notAvailable = Array.from(
+            document.querySelectorAll('span')
+          ).some(function(el) {
             return el.textContent.trim().includes('AI Overview is not available');
           });
           if (!notAvailable) {
-            var aiTexts = Array.from(document.querySelectorAll('.rIRoqf.hXY9cf')).map(function(el) {
+            var aiTexts = Array.from(
+              document.querySelectorAll('.rIRoqf.hXY9cf')
+            ).map(function(el) {
               return el.textContent.trim();
             }).filter(function(t) { return t.length > 30; });
             if (aiTexts.length > 0) aiOverview = aiTexts.join(' ');

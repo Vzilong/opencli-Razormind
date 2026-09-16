@@ -77,7 +77,10 @@ def run_youtube_comments_task(api_key, keywords, comments_limit=10, scroll_count
 
         time.sleep(10)
     else:
-        print(f"Error: Task polling timed out after {max_poll_time} seconds.", flush=True)
+        print(
+            f"Error: Task polling timed out after {max_poll_time} seconds.",
+            flush=True,
+        )
         return None
 
     # 3. Get Results

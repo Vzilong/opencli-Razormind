@@ -20,8 +20,8 @@ from backend.api.v1.iii_collections import _scoped_run
 from backend.database import get_db
 from backend.models.iii_collection import IIICollectionAttemptV1
 from backend.odp.query_client import (
-    OdpQueryRejected,
-    OdpQueryUnavailable,
+    OdpQueryRejectedError,
+    OdpQueryUnavailableError,
     OdpReconciliationDelegation,
     build_attempt_page_request,
     post_reconciliation_query,
@@ -142,7 +142,7 @@ async def reconcile_iii_collection_odp(
     )
     try:
         if event_id:
-            raise OdpQueryRejected("ODP reconciliation request was rejected")
+            raise OdpQueryRejectedError("ODP reconciliation request was rejected")
         request = build_attempt_page_request(
             delegation,
             cursor=cursor,

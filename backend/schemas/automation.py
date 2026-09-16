@@ -47,9 +47,13 @@ class AutomationCreate(BaseModel):
     def enabled_automation_has_pinned_agent(self):
         paired = self.operations_agent_id is not None and self.operations_agent_version is not None
         if (self.operations_agent_id is None) != (self.operations_agent_version is None):
-            raise ValueError("operations_agent_id and operations_agent_version must be set together")
+            raise ValueError(
+                "operations_agent_id and operations_agent_version must be set together"
+            )
         if self.enabled and not paired:
-            raise ValueError("enabled Automation requires a pinned published Operations Agent")
+            raise ValueError(
+                "enabled Automation requires a pinned published Operations Agent"
+            )
         return self
 
 class AutomationUpdate(BaseModel):
@@ -85,11 +89,15 @@ class AutomationUpdate(BaseModel):
         fields = self.model_fields_set
         binding_fields = {"operations_agent_id", "operations_agent_version"}
         if fields & binding_fields and not binding_fields <= fields:
-            raise ValueError("operations_agent_id and operations_agent_version must be updated together")
+            raise ValueError(
+                "operations_agent_id and operations_agent_version must be updated together"
+            )
         if binding_fields <= fields and (
             (self.operations_agent_id is None) != (self.operations_agent_version is None)
         ):
-            raise ValueError("operations_agent_id and operations_agent_version must both be set or null")
+            raise ValueError(
+                "operations_agent_id and operations_agent_version must both be set or null"
+            )
         return self
 
 

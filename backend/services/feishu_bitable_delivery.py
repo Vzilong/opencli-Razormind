@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
@@ -20,8 +20,8 @@ _DELIVERY_ATTEMPT_LEASE = timedelta(minutes=5)
 def _pending_attempt_is_stale(attempt: DeliveryAttempt) -> bool:
     updated_at = attempt.updated_at
     if updated_at.tzinfo is None:
-        updated_at = updated_at.replace(tzinfo=timezone.utc)
-    return datetime.now(timezone.utc) - updated_at >= _DELIVERY_ATTEMPT_LEASE
+        updated_at = updated_at.replace(tzinfo=UTC)
+    return datetime.now(UTC) - updated_at >= _DELIVERY_ATTEMPT_LEASE
 
 
 def _mark_attempt_pending(
@@ -36,7 +36,7 @@ def _mark_attempt_pending(
     attempt.field_map = field_map
     attempt.status = "pending"
     attempt.error_code = None
-    attempt.updated_at = datetime.now(timezone.utc)
+    attempt.updated_at = datetime.now(UTC)
 
 
 class FeishuDeliveryError(RuntimeError):

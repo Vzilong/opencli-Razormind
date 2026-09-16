@@ -507,10 +507,7 @@ export default function ProjectDataWorkbenchPage({ params }: { params: Promise<{
       } else if (format === 'csv') {
         const headers = Object.keys(rows[0])
         const csv = [headers, ...rows.map((row) => headers.map((header) => row[header] ?? ''))]
-          .map((row) => row.map((value) => {
-            const text = String(value)
-            return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text
-          }).join(','))
+          .map((row) => row.map((value) => serializeCsvCell(value)).join(','))
           .join('\r\n')
         downloadBlob(`${base}.csv`, `\uFEFF${csv}`, 'text/csv;charset=utf-8')
       } else {

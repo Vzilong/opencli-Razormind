@@ -239,7 +239,10 @@ async def submit_report_and_receipt(
         _, outbound = await _attempt_and_outbound(db, command.id)
         return outbound
 
-    monkeypatch.setattr("backend.api.v1.iii_collections.dispatch_collection_attempt", no_dispatch)
+    monkeypatch.setattr(
+        "backend.api.v1.iii_collections.dispatch_collection_attempt",
+        no_dispatch,
+    )
     monkeypatch.setattr(
         "backend.api.v1.iii_collections.get_settings",
         lambda: SimpleNamespace(
@@ -252,8 +255,14 @@ async def submit_report_and_receipt(
         lambda: SimpleNamespace(iii_ingress_receipt_secret="receipt-secret"),
     )
     submitted = await client.post(route(scope), json=submit_body())
-    command = await db_session.get(IIICollectionCommandV1, submitted.json()["data"]["commandId"])
-    attempt = await db_session.get(IIICollectionAttemptV1, submitted.json()["data"]["attemptId"])
+    command = await db_session.get(
+        IIICollectionCommandV1,
+        submitted.json()["data"]["commandId"],
+    )
+    attempt = await db_session.get(
+        IIICollectionAttemptV1,
+        submitted.json()["data"]["attemptId"],
+    )
     assert command is not None and attempt is not None
     report = report_body(
         command,

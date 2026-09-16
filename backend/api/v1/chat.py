@@ -1050,7 +1050,8 @@ async def _chat_xml(
     *,
     tool_trace: list[dict[str, Any]] | None = None,
 ) -> ChatExecution:
-    """Tool loop for XML-style models (parse <tool_use> from content, feed results back as text)."""
+    """Tool loop for XML-style models (parse <tool_use> from content, feed results
+    back as text)."""
     messages: list[dict[str, Any]] = [{"role": "system", "content": system + XML_TOOL_TEXT}]
     messages += [{"role": m.role, "content": m.content} for m in body.messages]
     tool_trace = tool_trace if tool_trace is not None else []

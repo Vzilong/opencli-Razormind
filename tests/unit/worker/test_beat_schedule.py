@@ -5,9 +5,9 @@ removed in runtime-hardening phase PR-C, superseded by worker/redbeat_sync.py)."
 import pytest
 from celery.schedules import crontab
 
+from backend.worker import tasks as worker_tasks
 from backend.worker.beat_schedule import parse_cron_expression
 from backend.worker.celery_app import celery_app
-from backend.worker import tasks as worker_tasks
 
 
 def test_parse_cron_expression_valid():

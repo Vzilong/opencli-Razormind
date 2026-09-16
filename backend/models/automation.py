@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, ForeignKey, Integer, JSON, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.models.base import TimestampMixin
@@ -9,7 +9,9 @@ class Automation(TimestampMixin):
 
     __tablename__ = "automations"
     __table_args__ = (
-        UniqueConstraint("workspace_id", "starter_key", name="uq_automations_workspace_starter_key"),
+        UniqueConstraint(
+            "workspace_id", "starter_key", name="uq_automations_workspace_starter_key"
+        ),
     )
 
     workspace_id: Mapped[str] = mapped_column(

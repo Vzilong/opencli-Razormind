@@ -76,7 +76,7 @@ class CollectionLineage:
         return values
 
     @classmethod
-    def from_dict(cls, values: dict[str, Any] | None) -> "CollectionLineage | None":
+    def from_dict(cls, values: dict[str, Any] | None) -> CollectionLineage | None:
         if values is None:
             return None
         fields = {

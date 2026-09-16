@@ -3,14 +3,16 @@ import sys
 
 
 def main():
-    sys.stdout.reconfigure(encoding='utf-8', newline='\n')
+    sys.stdout.reconfigure(encoding="utf-8", newline="\n")
     parser = argparse.ArgumentParser()
-    parser.add_argument('user_id')            # Numeric user ID
-    parser.add_argument('--count', default='12')   # Posts per page (max 12)
-    parser.add_argument('--max-id', default='')    # Pagination cursor (empty for first page)
+    parser.add_argument("user_id")  # Numeric user ID
+    parser.add_argument("--count", default="12")  # Posts per page (max 12)
+    parser.add_argument(
+        "--max-id", default=""
+    )  # Pagination cursor (empty for first page)
     args = parser.parse_args()
 
-    max_id_param = f'&max_id={args.max_id}' if args.max_id else ''
+    max_id_param = f"&max_id={args.max_id}" if args.max_id else ""
 
     js = f"""
     (async function() {{
@@ -61,6 +63,3 @@ def main():
     }})()
     """
     print(js)
-
-if __name__ == '__main__':
-    main()

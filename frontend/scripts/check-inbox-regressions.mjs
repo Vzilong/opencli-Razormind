@@ -6,7 +6,6 @@ const read = (path) => readFile(new URL(`../${path}`, import.meta.url), 'utf8')
 
 test('inbox combines existing operational signals with server-backed human approvals', async () => {
   const page = await read('app/(app)/inbox/page.tsx')
-  const approvalDetail = await read('components/inbox/queue-detail.tsx')
   const hooks = await read('lib/api/hooks.ts')
   const endpoints = await read('lib/api/endpoints.ts')
 

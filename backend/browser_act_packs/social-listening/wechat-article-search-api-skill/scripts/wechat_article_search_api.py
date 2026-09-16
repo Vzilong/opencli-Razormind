@@ -77,7 +77,10 @@ def run_wechat_article_search_task(api_key, keywords, limit=10, publication_date
 
         time.sleep(10)
     else:
-        print(f"Error: Task polling timed out after {max_poll_time} seconds.", flush=True)
+        print(
+            f"Error: Task polling timed out after {max_poll_time} seconds.",
+            flush=True,
+        )
         return None
 
     # 3. Get Results

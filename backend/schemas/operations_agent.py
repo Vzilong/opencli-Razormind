@@ -119,7 +119,10 @@ class AgentRuntimeBindingV1(BaseModel):
     def config_is_task_scoped(cls, value: dict[str, JsonValue]) -> dict[str, JsonValue]:
         unsupported = sorted(set(value) - {"timeout_seconds"})
         if unsupported:
-            raise ValueError("runtime config is Fleet-owned; unsupported task keys: " + ", ".join(unsupported))
+            raise ValueError(
+                "runtime config is Fleet-owned; unsupported task keys: "
+                + ", ".join(unsupported)
+            )
         timeout = value.get("timeout_seconds")
         if timeout is not None and (
             not isinstance(timeout, (int, float))

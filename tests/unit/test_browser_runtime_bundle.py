@@ -671,7 +671,13 @@ def test_opencli_default_v2_resolver_loads_the_three_required_extensions(tmp_pat
     bundle, manifest = _materialize_opencli_default_v2_bundle(tmp_path / "bundles")
 
     result = subprocess.run(
-        ["node", str(_resolver()), str(bundle / "manifest.json"), str(tmp_path / "bundles"), "--report"],
+        [
+            "node",
+            str(_resolver()),
+            str(bundle / "manifest.json"),
+            str(tmp_path / "bundles"),
+            "--report",
+        ],
         capture_output=True,
         check=False,
         text=True,

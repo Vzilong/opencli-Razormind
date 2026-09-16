@@ -26,7 +26,9 @@ from datetime import datetime
 from ruamel.yaml import YAML
 from ruamel.yaml.scalarstring import DoubleQuotedScalarString
 
-STORY_RE = re.compile(r"^(\d+)-\d+[a-z]?-")  # trailing [a-z]? matches split-story keys like 2-6a-...
+STORY_RE = re.compile(
+    r"^(\d+)-\d+[a-z]?-"
+)  # trailing [a-z]? matches split-story keys like 2-6a-...
 DATE_FORMAT = "%m-%d-%Y %H:%M"
 # The authoritative action-item vocabulary, mirrored from bmad-sprint-planning's
 # SKILL.md. Anything outside it would render as unknown in the status dashboard.
@@ -49,7 +51,7 @@ def _load_yaml(path):
     # file. utf-8 is ruamel's current default, but the file is read back as
     # utf-8 unconditionally, so state it rather than inherit it.
     yaml.encoding = "utf-8"
-    with open(path, "r", encoding="utf-8") as fh:
+    with open(path, encoding="utf-8") as fh:
         data = yaml.load(fh)
     return yaml, data
 
@@ -614,7 +616,7 @@ def cmd_update(args):
                 )
 
     try:
-        with open(args.file, "r", encoding="utf-8") as fh:
+        with open(args.file, encoding="utf-8") as fh:
             new_text = fh.read()
     except (OSError, UnicodeDecodeError) as exc:
         _fail(f"re-read failed after write: {exc}")

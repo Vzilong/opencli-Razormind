@@ -77,7 +77,10 @@ def run_zhihu_search_task(api_key, keyword, publish_date="7d", limit=10):
 
         time.sleep(10)
     else:
-        print(f"Error: Task polling timed out after {max_poll_time} seconds.", flush=True)
+        print(
+            f"Error: Task polling timed out after {max_poll_time} seconds.",
+            flush=True,
+        )
         return None
 
     # 3. Get Results

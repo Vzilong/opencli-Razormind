@@ -8,8 +8,8 @@ from sqlalchemy import select
 from backend.database import AsyncSessionLocal
 from backend.models.task import CollectionTask, TaskRun
 from backend.pipeline import events
-from backend.pipeline.error_taxonomy import effective_error_type
 from backend.pipeline.domain_limiter import domain_slot
+from backend.pipeline.error_taxonomy import effective_error_type
 from backend.pipeline.pipeline import run_pipeline
 
 logger = logging.getLogger(__name__)
@@ -173,14 +173,6 @@ async def run_collection_pipeline(
     # Source/binding revisions, acquisition execution, runtime, trace, and
     # artifacts remain null unless an upstream handoff establishes them; this
     # path deliberately does not infer an acquisition-to-record bridge.
-    from backend.pipeline.sinks.base import CollectionLineage
-
-    collection_lineage = CollectionLineage(
-        task_id=task_id,
-        source_id=source.id,
-        collection_run_id=run_id,
-        worker_id=worker_id,
-    )
     async with domain_slot(source):
         try:
             pipeline_result = await run_pipeline(

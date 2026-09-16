@@ -26,8 +26,6 @@ from backend.models.gaojixing_collection import (
     GaojixingQuestionStatus,
     GaojixingRuntimeLease,
 )
-logger = logging.getLogger(__name__)
-
 from backend.workflow.gaojixing_archive import (
     finalize_archive,
     promote_capture_artifacts,
@@ -39,6 +37,9 @@ from backend.workflow.gaojixing_doubao import audit_gaojixing_question_evidence
 from backend.workflow.managed_gaojixing_question_batches import (
     resolve_managed_question_batch,
 )
+
+logger = logging.getLogger(__name__)
+
 
 LEASE_DURATION = timedelta(seconds=30)
 HEARTBEAT_INTERVAL_SECONDS = 5.0
@@ -94,7 +95,10 @@ async def run_collection_job(
                     if isawaitable(result):
                         await result
                 except Exception:
-                    logger.exception("failed to resume Gaojixing workflow run", extra={"run_id": job.workflow_run_id})
+                    logger.exception(
+                        "failed to resume Gaojixing workflow run",
+                        extra={"run_id": job.workflow_run_id},
+                    )
                     return "resume_pending"
                 return "workflow_resume_scheduled"
             return "busy"
@@ -199,7 +203,10 @@ async def run_collection_job(
                     if isawaitable(result):
                         await result
                 except Exception:
-                    logger.exception("failed to resume Gaojixing workflow run", extra={"run_id": workflow_run_id})
+                    logger.exception(
+                        "failed to resume Gaojixing workflow run",
+                        extra={"run_id": workflow_run_id},
+                    )
                     return "resume_pending"
                 return "workflow_resume_scheduled"
             if pending.phase == "phase2":

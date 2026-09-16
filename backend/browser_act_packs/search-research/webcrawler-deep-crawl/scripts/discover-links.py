@@ -63,16 +63,24 @@ def main():
             links: []
           }});
         }}
-        const scopeBase = scopeUrl.origin + scopeUrl.pathname.replace(/\\/[^\\/]*$/, '/');
+        const scopeBase = (
+          scopeUrl.origin + scopeUrl.pathname.replace(/\\/[^\\/]*$/, '/')
+        );
+        const assetExtensionRe = new RegExp(
+          '\\\\.(png|jpg|jpeg|gif|svg|webp|ico|mp4|mp3|webm|woff2?|'
+          + 'ttf|css|js|json|xml|zip|tar\\\\.gz)$',
+          'i'
+        );
 
         const anchors = document.querySelectorAll('a[href]');
         const seen = new Set();
         const links = [];
         for (const a of anchors) {{
           let href;
-          try {{ href = new URL(a.getAttribute('href'), document.baseURI).toString(); }}
+          try {{
+            href = new URL(a.getAttribute('href'), document.baseURI).toString();
+          }}
           catch(e) {{ continue; }}
-          // Drop fragments and tracking
           href = href.split('#')[0];
           if (!href || seen.has(href)) continue;
           // Scope check: must be under the start URL's directory or origin
@@ -90,7 +98,10 @@ def main():
           // Exclude globs
           if (excludeRes.some(re => re.test(href))) continue;
           // Include globs (if specified)
-          if (includeRes.length > 0 && !includeRes.some(re => re.test(href))) continue;
+          if (
+            includeRes.length > 0 &&
+            !includeRes.some(re => re.test(href))
+          ) continue;
           seen.add(href);
           links.push(href);
         }}

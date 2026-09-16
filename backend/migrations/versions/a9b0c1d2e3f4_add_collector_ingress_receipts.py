@@ -91,7 +91,9 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("receipt_id", name="uq_iii_collection_ingress_receipt_id"),
         sa.UniqueConstraint(
-            "producer_id", "idempotency_key", name="uq_iii_collection_ingress_receipt_replay"
+            "producer_id",
+            "idempotency_key",
+            name="uq_iii_collection_ingress_receipt_replay",
         ),
     )
     op.create_index(

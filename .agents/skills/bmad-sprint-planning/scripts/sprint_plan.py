@@ -76,38 +76,42 @@ STAMP_FORMATS = (DATE_FORMAT, "%Y-%m-%d %H:%M", "%Y-%m-%d")
 # Kept byte-identical (modulo the leading "# ") with the STATUS DEFINITIONS
 # block in sprint-status-template.yaml; test_sprint_plan.py asserts the two
 # never drift.
-HEADER_COMMENT = """\
-STATUS DEFINITIONS:
-==================
-Epic Status:
-  - backlog: Epic not yet started
-  - in-progress: Epic actively being worked on
-  - done: All stories in epic completed
-
-Story Status:
-  - backlog: Story only exists in epic file
-  - ready-for-dev: Story file created, ready for development
-  - in-progress: Developer actively working on implementation
-  - review: Implementation complete, ready for review
-  - done: Story completed
-
-Retrospective Status:
-  - optional: Can be completed but not required
-  - done: Retrospective has been completed
-
-Action Item Status:
-  - open: Committed during a retrospective, not yet addressed
-  - in-progress: Actively being worked on
-  - done: Completed
-
-WORKFLOW NOTES:
-===============
-- Epic transitions to 'in-progress' automatically when its first story starts (via build's sprint sync)
-- Stories can be worked in parallel if team capacity allows
-- Developer typically creates the next story after the previous one is 'done' to incorporate learnings
-- Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
-- Retrospective appends its action items to action_items; the status view surfaces open ones
-"""
+HEADER_COMMENT = (
+    "STATUS DEFINITIONS:\n"
+    "==================\n"
+    "Epic Status:\n"
+    "  - backlog: Epic not yet started\n"
+    "  - in-progress: Epic actively being worked on\n"
+    "  - done: All stories in epic completed\n"
+    "\n"
+    "Story Status:\n"
+    "  - backlog: Story only exists in epic file\n"
+    "  - ready-for-dev: Story file created, ready for development\n"
+    "  - in-progress: Developer actively working on implementation\n"
+    "  - review: Implementation complete, ready for review\n"
+    "  - done: Story completed\n"
+    "\n"
+    "Retrospective Status:\n"
+    "  - optional: Can be completed but not required\n"
+    "  - done: Retrospective has been completed\n"
+    "\n"
+    "Action Item Status:\n"
+    "  - open: Committed during a retrospective, not yet addressed\n"
+    "  - in-progress: Actively being worked on\n"
+    "  - done: Completed\n"
+    "\n"
+    "WORKFLOW NOTES:\n"
+    "===============\n"
+    "- Epic transitions to 'in-progress' automatically when its first story "
+    "starts (via build's sprint sync)\n"
+    "- Stories can be worked in parallel if team capacity allows\n"
+    "- Developer typically creates the next story after the previous one is "
+    "'done' to incorporate learnings\n"
+    "- Dev moves story to 'review', then runs code-review (fresh context, "
+    "different LLM recommended)\n"
+    "- Retrospective appends its action items to action_items; the status view "
+    "surfaces open ones\n"
+)
 
 
 def _fail(message, **extra):
@@ -201,7 +205,10 @@ def parse_epics(paths):
                     stories.append(key)
                 continue
             if SUSPECT_RE.match(line):
-                warnings.append(f"unparsed Epic/Story-like heading at {path}:{lineno}: {line.strip()}")
+                warnings.append(
+                    f"unparsed Epic/Story-like heading at {path}:{lineno}: "
+                    f"{line.strip()}"
+                )
     entries = []
     for epic_num in sorted(epics):
         entries.append((f"epic-{epic_num}", "epic", epic_num))
@@ -227,7 +234,7 @@ def _load_existing(path):
     if not Path(path).exists():
         return yaml, None
     try:
-        with io.open(path, "r", encoding="utf-8") as fh:
+        with open(path, encoding="utf-8") as fh:
             data = yaml.load(fh)
     except Exception as exc:
         _fail(f"existing status file is not valid YAML: {exc}", status_file=str(path))
@@ -286,7 +293,11 @@ def build_status(entries, existing_data, stories_dir, warnings):
             report["preserved"] += 1
         else:
             report["changed"] += 1
-        if kind == "story" and computed == "ready-for-dev" and existing_status.get(key) in (None, "backlog"):
+        if (
+            kind == "story"
+            and computed == "ready-for-dev"
+            and existing_status.get(key) in (None, "backlog")
+        ):
             report["upgraded_from_disk"].append(key)
         dev[key] = merged
         if kind == "epic" and not first_epic:
@@ -418,11 +429,18 @@ def cmd_generate(args):
     doc["tracking_system"] = _meta("tracking_system", args.tracking_system, "file-system")
     doc["story_location"] = _meta("story_location", args.story_location, args.stories_dir)
     doc["development_status"] = dev
-    if "action_items" not in doc and existing is not None and existing.get("action_items") is not None:
+    if (
+        "action_items" not in doc
+        and existing is not None
+        and existing.get("action_items") is not None
+    ):
         doc["action_items"] = existing["action_items"]
         doc.yaml_set_comment_before_after_key(
             "action_items",
-            before="\nAction items committed during retrospectives (section created by the retrospective workflow)",
+            before=(
+                "\nAction items committed during retrospectives "
+                "(section created by the retrospective workflow)"
+            ),
         )
 
     result = {
@@ -448,7 +466,7 @@ def cmd_generate(args):
         payload = _dump_bytes(yaml, doc)
         _atomic_write(args.status_file, payload, original_mode)
         verify_yaml = _make_yaml()
-        with io.open(args.status_file, "r", encoding="utf-8") as fh:
+        with open(args.status_file, encoding="utf-8") as fh:
             reread = verify_yaml.load(fh)
         if dict(reread.get("development_status") or {}) != {k: v for k, v in dev.items()}:
             raise ValueError("development_status mismatch after write")
@@ -465,8 +483,11 @@ def cmd_generate(args):
         else:
             Path(args.status_file).unlink(missing_ok=True)
             restored = True
-        _fail(f"write or validation failed, original {'restored' if restored else 'NOT restored'}: {exc}",
-              restored=restored)
+        _fail(
+            f"write or validation failed, original "
+            f"{'restored' if restored else 'NOT restored'}: {exc}",
+            restored=restored,
+        )
     print(json.dumps(result, default=str))
 
 
@@ -559,7 +580,10 @@ def cmd_status(args):
     if by_status.get("review"):
         risks.append(f"{len(by_status['review'])} story(ies) in review — run bmad-code-review")
     if unrecognized:
-        risks.append(f"{len(unrecognized)} unrecognized key(s) in development_status — run validate")
+        risks.append(
+            f"{len(unrecognized)} unrecognized key(s) in development_status "
+            "— run validate"
+        )
 
     recommendation = None
     if by_status.get("in-progress"):
@@ -575,10 +599,18 @@ def cmd_status(args):
         recommendation = {"skill": "bmad-build", "story_key": by_status["backlog"][0],
                           "reason": "start the first backlog story"}
     else:
-        optional_retros = sorted(num for num, status in retro_status.items() if status == "optional")
+        optional_retros = sorted(
+            num for num, status in retro_status.items() if status == "optional"
+        )
         if optional_retros:
-            recommendation = {"skill": "bmad-retrospective", "story_key": None,
-                              "reason": f"all stories done — epic-{optional_retros[0]}-retrospective is still open"}
+            recommendation = {
+                "skill": "bmad-retrospective",
+                "story_key": None,
+                "reason": (
+                    "all stories done — "
+                    f"epic-{optional_retros[0]}-retrospective is still open"
+                ),
+            }
 
     print(json.dumps({
         "ok": True, "action": "status", "status_file": str(args.status_file),
@@ -605,7 +637,7 @@ def cmd_validate(args):
         return
     yaml = _make_yaml()
     try:
-        with io.open(args.status_file, "r", encoding="utf-8") as fh:
+        with open(args.status_file, encoding="utf-8") as fh:
             data = yaml.load(fh)
     except Exception as exc:
         print(json.dumps({
@@ -622,7 +654,10 @@ def cmd_validate(args):
         for field in ("generated", "last_updated"):
             value = data.get(field)
             if value is not None and _parse_stamp(value) is None:
-                problems.append(f"'{field}' timestamp {str(value)!r} does not match '{DATE_FORMAT}'")
+                problems.append(
+                    f"'{field}' timestamp {str(value)!r} does not match "
+                    f"'{DATE_FORMAT}'"
+                )
         dev = data.get("development_status")
         if dev is not None and not isinstance(dev, dict):
             problems.append("development_status is not a mapping")
@@ -630,7 +665,10 @@ def cmd_validate(args):
             for key, raw in dev.items():
                 parsed = classify_key(str(key))
                 if parsed is None:
-                    problems.append(f"unrecognized key '{key}' (expected epic-N, N-M-slug, or epic-N-retrospective)")
+                    problems.append(
+                        f"unrecognized key '{key}' "
+                        "(expected epic-N, N-M-slug, or epic-N-retrospective)"
+                    )
                     continue
                 kind, _ = parsed
                 status, was_legacy = _normalize(raw)
@@ -650,7 +688,8 @@ def cmd_validate(args):
                         problems.append(f"action_items[{i}] is not a mapping")
                     elif item.get("status") not in ACTION_STATUSES:
                         problems.append(
-                            f"action_items[{i}] has a missing or unknown status ({item.get('status')!r})"
+                            f"action_items[{i}] has a missing or unknown status "
+                            f"({item.get('status')!r})"
                         )
     print(json.dumps({
         "ok": True, "action": "validate", "status_file": str(args.status_file),

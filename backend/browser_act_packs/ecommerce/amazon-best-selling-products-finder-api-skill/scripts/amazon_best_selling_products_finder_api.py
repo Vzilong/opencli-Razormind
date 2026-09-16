@@ -81,7 +81,10 @@ def run_amazon_best_selling_products_finder_task(
             print(f"[{timestamp}] Polling error: {e}. Retrying...", flush=True)
 
         time.sleep(10)
-    print(f"Error: Task polling timed out after {max_poll_time} seconds.", flush=True)
+    print(
+        f"Error: Task polling timed out after {max_poll_time} seconds.",
+        flush=True,
+    )
     return None
 
     # 3. Get Results

@@ -97,7 +97,10 @@ async def test_pipeline_captcha_failure_pauses_source_for_review(db_session):
     with (
         patch("backend.pipeline.collector.collect", return_value=channel_result),
         patch("backend.database.AsyncSessionLocal", return_value=mock_session_cm),
-        patch("backend.control.actuator.pause_source_for_captcha", new_callable=AsyncMock) as mock_pause,
+        patch(
+            "backend.control.actuator.pause_source_for_captcha",
+            new_callable=AsyncMock,
+        ) as mock_pause,
         patch("backend.config.get_settings") as mock_settings,
     ):
         mock_settings.return_value.control_pause_ttl_seconds = 900
@@ -135,7 +138,10 @@ async def test_pipeline_ordinary_failure_does_not_pause_source(db_session):
 
     with (
         patch("backend.pipeline.collector.collect", return_value=channel_result),
-        patch("backend.control.actuator.pause_source_for_captcha", new_callable=AsyncMock) as mock_pause,
+        patch(
+            "backend.control.actuator.pause_source_for_captcha",
+            new_callable=AsyncMock,
+        ) as mock_pause,
     ):
         result = await run_pipeline(db_session, source, task.id)
 

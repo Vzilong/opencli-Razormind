@@ -22,7 +22,10 @@ class AgentRun(TimestampMixin):
     __tablename__ = "agent_runs"
 
     session_id: Mapped[str] = mapped_column(
-        String(36), ForeignKey("agent_sessions.id", ondelete="CASCADE"), nullable=False, index=True
+        String(36),
+        ForeignKey("agent_sessions.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     kind: Mapped[str] = mapped_column(String(32), nullable=False, default="chat")
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="queued", index=True)
@@ -34,13 +37,23 @@ class AgentRun(TimestampMixin):
 
     session: Mapped[AgentSession] = relationship("AgentSession", back_populates="runs")
     events: Mapped[list["AgentRunEvent"]] = relationship(
-        "AgentRunEvent", back_populates="run", cascade="all, delete-orphan", order_by="AgentRunEvent.sequence"
+        "AgentRunEvent",
+        back_populates="run",
+        cascade="all, delete-orphan",
+        order_by="AgentRunEvent.sequence",
     )
 
 
 class AgentRunEvent(TimestampMixin):
     __tablename__ = "agent_run_events"
-    __table_args__ = (Index("ux_agent_run_events_run_id_sequence", "run_id", "sequence", unique=True),)
+    __table_args__ = (
+        Index(
+            "ux_agent_run_events_run_id_sequence",
+            "run_id",
+            "sequence",
+            unique=True,
+        ),
+    )
 
     run_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("agent_runs.id", ondelete="CASCADE"), nullable=False, index=True

@@ -119,7 +119,11 @@ def test_unpinned_dep_caught():
 def test_placeholder_version_caught():
     text = CLEAN.replace("| fastapi | 0.115 |", "| fastapi | {pin} |")
     result = lint_spine.lint(text)
-    assert any(f["category"] == "version_pin" and "fastapi" in f["detail"] for f in result["findings"])
+    assert any(
+        f["category"] == "version_pin"
+        and "fastapi" in f["detail"]
+        for f in result["findings"]
+    )
 
 
 def test_no_stack_section_ok():
@@ -146,12 +150,19 @@ def test_template_token_is_low_severity():
     # mechanical pass stays near-zero false-positive
     text = CLEAN.replace("single write path", "{decision}")
     result = lint_spine.lint(text)
-    toks = [f for f in result["findings"] if f["category"] == "placeholder" and "template token" in f["detail"]]
+    toks = [
+        f
+        for f in result["findings"]
+        if f["category"] == "placeholder" and "template token" in f["detail"]
+    ]
     assert toks and all(f["severity"] == "low" for f in toks)
 
 
 def test_no_frontmatter_body_still_scanned():
-    text = "## Invariants\n\n### AD-1 — x\n\n- **Binds:** all\n- **Prevents:** drift\n- **Rule:** TBD\n"
+    text = (
+        "## Invariants\n\n### AD-1 — x\n\n"
+        "- **Binds:** all\n- **Prevents:** drift\n- **Rule:** TBD\n"
+    )
     result = lint_spine.lint(text)
     assert "placeholder" in cats(result)  # TBD caught even with no frontmatter
 
@@ -161,7 +172,9 @@ def test_frontmatter_value_with_dashes_not_truncated():
     text = ("---\nname: 'x'\nscope: 'phase 1 --- phase 2'\n---\n\n"
             "## Stack\n\n| Name | Version |\n| --- | --- |\n| fastapi |  |\n")
     result = lint_spine.lint(text)
-    assert any(f["category"] == "version_pin" for f in result["findings"])  # read past the inline ---
+    assert any(
+        f["category"] == "version_pin" for f in result["findings"]
+    )  # read past the inline ---
 
 
 def test_ad_heading_in_fence_not_counted():
@@ -247,15 +260,25 @@ def test_frontmatter_unfilled_token_caught():
     # an unfilled {scope}/{paradigm}/{date} in frontmatter is part of the contract and must lint
     text = "---\nname: 'x'\nscope: '{what this spine governs}'\n---\n\n## Invariants\n"
     result = lint_spine.lint(text)
-    fm = [f for f in result["findings"] if f["category"] == "placeholder" and "frontmatter" in f["detail"]]
-    assert fm and any("template token" in f["detail"] for f in fm)
+    fm = [
+        f
+        for f in result["findings"]
+        if f["category"] == "placeholder" and "frontmatter" in f["detail"]
+    ]
+    assert fm and any(
+        "template token" in f["detail"] for f in fm
+    )
 
 
 def test_frontmatter_tbd_caught():
     text = "---\nname: 'x'\nstatus: TBD\n---\n\n## Invariants\n"
     result = lint_spine.lint(text)
-    assert any(f["category"] == "placeholder" and "frontmatter" in f["detail"] and "TBD" in f["detail"]
-               for f in result["findings"])
+    assert any(
+        f["category"] == "placeholder"
+        and "frontmatter" in f["detail"]
+        and "TBD" in f["detail"]
+        for f in result["findings"]
+    )
 
 
 def test_unreadable_spine_returns_error_not_crash(tmp_path, capsys):

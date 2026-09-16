@@ -1,14 +1,14 @@
 """Celery tasks for async pipeline execution."""
 
 import asyncio
-from datetime import UTC, datetime
 import logging
+from datetime import UTC, datetime
 from typing import Any
 
 from celery import Task
 
-from backend.worker.control_plane_client import post_control_plane
 from backend.worker.celery_app import celery_app
+from backend.worker.control_plane_client import post_control_plane
 
 logger = logging.getLogger(__name__)
 

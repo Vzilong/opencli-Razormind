@@ -19,8 +19,16 @@ def main():
         }
 
         // Amazon pagination
-        const amzNext = document.querySelector('.a-pagination .a-last:not(.a-disabled) a')?.href;
-        if (amzNext) return JSON.stringify({ next_url: amzNext, has_next: true, method: 'amazon' });
+        const amzNext = document.querySelector(
+          '.a-pagination .a-last:not(.a-disabled) a'
+        )?.href;
+        if (amzNext) {
+          return JSON.stringify({
+            next_url: amzNext,
+            has_next: true,
+            method: 'amazon',
+          });
+        }
 
         // eBay pagination
         const ebayNext = document.querySelector(

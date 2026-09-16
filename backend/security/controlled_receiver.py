@@ -137,8 +137,13 @@ def resolve_endpoint(identity: str, credential_reference: str) -> ControlledRece
             "Controlled receiver endpoint identity is not allowlisted"
         )
     required = {
-        "url", "receiverIdentity", "credentialReference", "requestKeyId",
-        "receiptKeyId", "allowedNetworks", "durableStatus",
+        "url",
+        "receiverIdentity",
+        "credentialReference",
+        "requestKeyId",
+        "receiptKeyId",
+        "allowedNetworks",
+        "durableStatus",
     }
     if set(raw) != required:
         raise ControlledReceiverSecurityError("Controlled receiver registry entry is incomplete")
@@ -364,8 +369,13 @@ def verify_request(
         hmac.new(
             key,
             _request_signing_bytes(
-                body=body, key_id=key_id, timestamp=timestamp, nonce=nonce,
-                operation_id=operation_id, decision_hash=decision_hash, payload_hash=payload_hash,
+                body=body,
+                key_id=key_id,
+                timestamp=timestamp,
+                nonce=nonce,
+                operation_id=operation_id,
+                decision_hash=decision_hash,
+                payload_hash=payload_hash,
             ),
             hashlib.sha256,
         ).digest()
@@ -414,8 +424,16 @@ def verify_receipt(
     payload_hash: str,
 ) -> str:
     if not isinstance(receipt, dict) or set(receipt) != {
-        "version", "receiverIdentity", "operationId", "decisionHash", "payloadHash",
-        "durableStatus", "receiptId", "timestamp", "keyId", "signature",
+        "version",
+        "receiverIdentity",
+        "operationId",
+        "decisionHash",
+        "payloadHash",
+        "durableStatus",
+        "receiptId",
+        "timestamp",
+        "keyId",
+        "signature",
     }:
         raise ControlledReceiverSecurityError("Missing controlled receiver receipt")
     signature = receipt["signature"]
@@ -423,8 +441,14 @@ def verify_receipt(
     fields = {
         key: receipt[key]
         for key in (
-            "version", "receiverIdentity", "operationId", "decisionHash",
-            "payloadHash", "durableStatus", "receiptId", "timestamp",
+            "version",
+            "receiverIdentity",
+            "operationId",
+            "decisionHash",
+            "payloadHash",
+            "durableStatus",
+            "receiptId",
+            "timestamp",
         )
     }
     if (
@@ -475,7 +499,7 @@ async def pinned_post(
     timeout_seconds: float,
     status_query: bool = False,
 ) -> httpx.Response:
-    url = endpoint.url[:-len("/deliver")] + "/status" if status_query else endpoint.url
+    url = endpoint.url[: -len("/deliver")] + "/status" if status_query else endpoint.url
     if status_query and not endpoint.url.endswith("/deliver"):
         raise ControlledReceiverSecurityError(
             "Controlled receiver delivery path cannot derive fixed status path"

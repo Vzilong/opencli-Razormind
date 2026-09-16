@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -140,7 +140,7 @@ async def test_stale_pending_attempt_can_retry_after_reservation_crash(db_sessio
         evidence_digest="a" * 64,
         field_map={"recordId": "Record ID"},
         status="pending",
-        updated_at=datetime.now(timezone.utc) - timedelta(minutes=10),
+        updated_at=datetime.now(UTC) - timedelta(minutes=10),
     )
     db_session.add(stale)
     await db_session.commit()
@@ -182,7 +182,7 @@ async def test_stale_pending_attempt_rejects_changed_payload(db_session):
             evidence_digest="a" * 64,
             field_map={"recordId": "Record ID"},
             status="pending",
-            updated_at=datetime.now(timezone.utc) - timedelta(minutes=10),
+            updated_at=datetime.now(UTC) - timedelta(minutes=10),
         )
     )
     await db_session.commit()

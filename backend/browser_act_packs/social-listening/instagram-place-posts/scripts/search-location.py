@@ -4,9 +4,11 @@ import urllib.parse
 
 
 def main():
-    sys.stdout.reconfigure(encoding='utf-8', newline='\n')
+    sys.stdout.reconfigure(encoding="utf-8", newline="\n")
     parser = argparse.ArgumentParser()
-    parser.add_argument('keyword')  # Location name to search (e.g., "New York", "Eiffel Tower")
+    parser.add_argument(
+        "keyword"
+    )  # Location name to search (e.g., "New York", "Eiffel Tower")
     args = parser.parse_args()
 
     # URL-encode the keyword
@@ -47,6 +49,7 @@ def main():
     }})()
     """
     print(js)
+
 
 if __name__ == '__main__':
     main()

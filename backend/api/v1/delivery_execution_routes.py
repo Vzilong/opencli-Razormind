@@ -142,7 +142,11 @@ async def cancel_execution(
         permission=WorkspacePermission.APPROVE_ACTIONS,
     )
     try:
-        result = await cancel_delivery_execution(db, scope=scope, execution_id=execution_id)
+        result = await cancel_delivery_execution(
+            db,
+            scope=scope,
+            execution_id=execution_id,
+        )
         await db.commit()
         return ApiResponse.ok(result)
     except DeliveryExecutionConflictError as exc:
@@ -173,7 +177,11 @@ async def reconcile_execution(
         permission=WorkspacePermission.APPROVE_ACTIONS,
     )
     try:
-        result = await reconcile_delivery_execution(db, scope=scope, execution_id=execution_id)
+        result = await reconcile_delivery_execution(
+            db,
+            scope=scope,
+            execution_id=execution_id,
+        )
         await db.commit()
         return ApiResponse.ok(result)
     except DeliveryExecutionConflictError as exc:

@@ -141,7 +141,11 @@ def test_registry_rejects_non_global_or_overbroad_networks(monkeypatch, network)
     settings = get_settings()
     registry = json.loads(settings.controlled_receiver_registry_json)
     registry["receiver-primary"]["allowedNetworks"] = [network]
-    monkeypatch.setattr(settings, "controlled_receiver_registry_json", json.dumps(registry))
+    monkeypatch.setattr(
+        settings,
+        "controlled_receiver_registry_json",
+        json.dumps(registry),
+    )
     with pytest.raises(receiver.ControlledReceiverSecurityError, match="network scope"):
         receiver.resolve_endpoint("receiver-primary", "credential-a")
 
@@ -159,7 +163,11 @@ def test_request_verification_binds_receiver_identity_to_its_registry_key(monkey
     settings = get_settings()
     registry = json.loads(settings.controlled_receiver_registry_json)
     registry["receiver-primary"]["requestKeyId"] = "other-request-key"
-    monkeypatch.setattr(settings, "controlled_receiver_registry_json", json.dumps(registry))
+    monkeypatch.setattr(
+        settings,
+        "controlled_receiver_registry_json",
+        json.dumps(registry),
+    )
     with pytest.raises(receiver.ControlledReceiverSecurityError):
         receiver.verify_request(
             body=body,
@@ -176,7 +184,11 @@ def test_registry_rejects_missing_durable_status_and_weak_hmac_keys(monkeypatch)
     complete = json.loads(settings.controlled_receiver_registry_json)
     registry = json.loads(settings.controlled_receiver_registry_json)
     del registry["receiver-primary"]["durableStatus"]
-    monkeypatch.setattr(settings, "controlled_receiver_registry_json", json.dumps(registry))
+    monkeypatch.setattr(
+        settings,
+        "controlled_receiver_registry_json",
+        json.dumps(registry),
+    )
     with pytest.raises(receiver.ControlledReceiverSecurityError, match="incomplete"):
         receiver.resolve_endpoint("receiver-primary", "credential-a")
     monkeypatch.setattr(settings, "controlled_receiver_registry_json", json.dumps(complete))

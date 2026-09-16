@@ -94,7 +94,8 @@ def main():
         '__relay_internal__pv__CometImmersivePhotoCanUserDisable3DMotionrelayprovider': false,
         '__relay_internal__pv__CometUFICommentActionLinksRewriteEnabledrelayprovider': false,
         '__relay_internal__pv__CometUFICommentAutoTranslationTyperelayprovider': 'ORIGINAL',
-        '__relay_internal__pv__CometUFICommentAvatarStickerAnimatedImagerelayprovider': false,
+        '__relay_internal__pv__CometUFICommentAvatarStickerAnimatedImagerelayprovider':
+          false,
         '__relay_internal__pv__CometUFIReactionsEnableShortNamerelayprovider': false,
         '__relay_internal__pv__CometUFIShareActionMigrationrelayprovider': true,
         '__relay_internal__pv__CometUFISingleLineUFIrelayprovider': true,

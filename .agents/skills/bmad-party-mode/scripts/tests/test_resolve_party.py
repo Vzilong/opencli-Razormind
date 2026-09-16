@@ -36,13 +36,17 @@ class TestBuildCollective(unittest.TestCase):
         self.assertEqual(col["bmad-agent-analyst"]["source"], "installed")
 
     def test_custom_member_appends(self):
-        col, _, _ = rp.build_collective(AGENTS, [{"code": "morpheus", "name": "Morpheus", "persona": "riddles"}])
+        col, _, _ = rp.build_collective(
+            AGENTS, [{"code": "morpheus", "name": "Morpheus", "persona": "riddles"}]
+        )
         self.assertIn("morpheus", col)
         self.assertEqual(col["morpheus"]["source"], "custom")
         self.assertEqual(col["morpheus"]["persona"], "riddles")
 
     def test_custom_overrides_installed_by_alias(self):
-        col, _, _ = rp.build_collective(AGENTS, [{"code": "analyst", "name": "Mary-Custom", "persona": "p"}])
+        col, _, _ = rp.build_collective(
+            AGENTS, [{"code": "analyst", "name": "Mary-Custom", "persona": "p"}]
+        )
         # Override lands on the canonical installed code, not a new "analyst" entry.
         self.assertNotIn("analyst", col)
         self.assertEqual(col["bmad-agent-analyst"]["source"], "custom")
@@ -55,10 +59,14 @@ class TestBuildCollective(unittest.TestCase):
 
 class TestResolveMembers(unittest.TestCase):
     def setUp(self):
-        self.col, self.idx, _ = rp.build_collective(AGENTS, [{"code": "morpheus", "name": "Morpheus"}])
+        self.col, self.idx, _ = rp.build_collective(
+            AGENTS, [{"code": "morpheus", "name": "Morpheus"}]
+        )
 
     def test_resolves_in_listed_order_and_flags_unknowns(self):
-        resolved, unresolved = rp.resolve_members(["morpheus", "analyst", "ghost"], self.col, self.idx)
+        resolved, unresolved = rp.resolve_members(
+            ["morpheus", "analyst", "ghost"], self.col, self.idx
+        )
         self.assertEqual([m["code"] for m in resolved], ["morpheus", "bmad-agent-analyst"])
         self.assertEqual(unresolved, ["ghost"])
 
@@ -87,7 +95,9 @@ class TestGroups(unittest.TestCase):
 
 class TestGroupDetail(unittest.TestCase):
     def setUp(self):
-        self.col, self.idx, _ = rp.build_collective(AGENTS, [{"code": "morpheus", "name": "Morpheus"}])
+        self.col, self.idx, _ = rp.build_collective(
+            AGENTS, [{"code": "morpheus", "name": "Morpheus"}]
+        )
 
     def test_scene_passes_through_when_present(self):
         g = {"id": "tos-10-forward", "name": "Ten Forward", "members": ["morpheus"],
@@ -114,9 +124,13 @@ class TestGroupDetail(unittest.TestCase):
         self.assertEqual(d["scene"][:7], "Figures")
 
     def test_memory_enabled_follows_group_flag_and_defaults_off(self):
-        on = rp.group_detail({"id": "g", "members": ["morpheus"], "memory": True}, self.col, self.idx)
+        on = rp.group_detail(
+            {"id": "g", "members": ["morpheus"], "memory": True}, self.col, self.idx
+        )
         self.assertTrue(on["memory_enabled"])
-        off = rp.group_detail({"id": "g", "members": ["morpheus"], "memory": False}, self.col, self.idx)
+        off = rp.group_detail(
+            {"id": "g", "members": ["morpheus"], "memory": False}, self.col, self.idx
+        )
         self.assertFalse(off["memory_enabled"])
         absent = rp.group_detail({"id": "g", "members": ["morpheus"]}, self.col, self.idx)
         self.assertFalse(absent["memory_enabled"])  # opt-in per named group

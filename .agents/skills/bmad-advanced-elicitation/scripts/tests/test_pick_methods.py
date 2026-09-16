@@ -17,13 +17,18 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import pick_methods  # noqa: E402
 
-CSV = """num,category,method_name,description,output_pattern
-1,risk,Pre-mortem Analysis,Imagine future failure then work backwards,failure → causes → prevention
-2,risk,Assumption Audit,List and stress-test every assumption,list → rate → stress-test
-3,core,First Principles Analysis,Rebuild from fundamental truths,assumptions → truths → new approach
-4,core,Socratic Questioning,Targeted questions reveal hidden assumptions,questions → revelations → understanding
-5,creative,SCAMPER Method,Seven creativity lenses,S→C→A→M→P→E→R
-"""
+CSV = (
+    "num,category,method_name,description,output_pattern\n"
+    "1,risk,Pre-mortem Analysis,Imagine future failure then work backwards,"
+    "failure → causes → prevention\n"
+    "2,risk,Assumption Audit,List and stress-test every assumption,"
+    "list → rate → stress-test\n"
+    "3,core,First Principles Analysis,Rebuild from fundamental truths,"
+    "assumptions → truths → new approach\n"
+    "4,core,Socratic Questioning,Targeted questions reveal hidden assumptions,"
+    "questions → revelations → understanding\n"
+    "5,creative,SCAMPER Method,Seven creativity lenses,S→C→A→M→P→E→R\n"
+)
 
 EXTRA = [
     {

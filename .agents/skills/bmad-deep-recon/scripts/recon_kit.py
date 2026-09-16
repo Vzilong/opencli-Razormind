@@ -241,9 +241,12 @@ def cell_html(cell: str, invalid: list[str]) -> str:
         url = safe_url(link.group(2))
         label = html.escape(link.group(1) or link.group(2))
         if url:
-            return html.escape(cell[:link.start()]) + \
-                f'<a href="{html.escape(url, quote=True)}" target="_blank" rel="noopener">{label}</a>' + \
-                html.escape(cell[link.end():])
+            return (
+                html.escape(cell[:link.start()])
+                + f'<a href="{html.escape(url, quote=True)}" '
+                f'target="_blank" rel="noopener">{label}</a>'
+                + html.escape(cell[link.end():])
+            )
         invalid.append(link.group(2))
         return html.escape(cell.replace(link.group(0), link.group(1) or link.group(2)))
     bare = BARE_URL_RE.search(cell)

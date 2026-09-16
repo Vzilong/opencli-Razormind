@@ -1,0 +1,22 @@
+{
+  "schema": "design-pipeline.toolchain-request.v1",
+  "framework": "react",
+  "brief": "Audit the existing OpenCLI Admin login screen in the ORCA WebView for visual hierarchy, purposeful FX and motion, responsiveness, accessibility, reduced-motion behavior, and error recovery without changing the project-owned runtime stack.",
+  "existing": {
+    "framework": "Next.js 16.3.3 and React 19.2.8",
+    "components": "project-owned UI components and shadcn",
+    "motion": ["CSS", "Motion React", "Anime.js", "GSAP"]
+  },
+  "requested": {
+    "mode": "acceptance-only",
+    "newDependencies": false
+  },
+  "capabilities": [
+    "visual-hierarchy-audit",
+    "motion-purpose-and-frequency-audit",
+    "responsive-layout-audit",
+    "accessibility-audit",
+    "reduced-motion-audit",
+    "error-and-recovery-state-audit"
+  ]
+}

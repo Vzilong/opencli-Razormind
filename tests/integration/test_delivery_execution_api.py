@@ -20,7 +20,6 @@ from backend.models.delivery_authorization import (
 )
 from backend.models.delivery_execution import (
     ControlledReceiverDelivery,
-    ControlledReceiverNonce,
     DeliveryExecution,
     DeliveryExecutionReconciliation,
     DeliveryExecutionResult,

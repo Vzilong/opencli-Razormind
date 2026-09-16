@@ -31,32 +31,32 @@ def main():
 
           var img = card.querySelector('img[src], img[data-ks-lazyload-custom]');
           var imgUrl = '';
-          if (img) {{
+          if (img) {
             imgUrl = img.src || img.getAttribute('data-ks-lazyload-custom') || '';
             if (imgUrl && !imgUrl.startsWith('http')) imgUrl = 'https:' + imgUrl;
-          }}
+          }
 
-          return {{
+          return {
             itemId: itemId,
             title: title,
             imageUrl: imgUrl,
             itemUrl: 'https://item.taobao.com/item.htm?id=' + itemId
-          }};
-        }}).filter(function(item) {{ return item !== null; }});
+          };
+        }).filter(function(item) { return item !== null; });
 
         // Deduplicate by itemId
-        var seen = {{}};
-        var unique = items.filter(function(item) {{
+        var seen = {};
+        var unique = items.filter(function(item) {
           if (seen[item.itemId]) return false;
           seen[item.itemId] = true;
           return true;
-        }});
+        });
 
         return JSON.stringify(unique);
-      }} catch(e) {{
-        return JSON.stringify({{ error: true, message: e.message }});
-      }}
-    }})()
+      } catch(e) {
+        return JSON.stringify({ error: true, message: e.message });
+      }
+    })()
     """
     js = js.replace("{{", "{").replace("}}", "}")
     print(js)

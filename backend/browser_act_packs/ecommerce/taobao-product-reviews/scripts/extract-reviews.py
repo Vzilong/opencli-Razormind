@@ -3,7 +3,7 @@ import sys
 
 
 def main():
-    sys.stdout.reconfigure(encoding='utf-8', newline='\n')
+    sys.stdout.reconfigure(encoding="utf-8", newline="\n")
     parser = argparse.ArgumentParser()
     parser.add_argument('item_id')   # itemId (for documentation only; page already loaded)
     parser.parse_args()

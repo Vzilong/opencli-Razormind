@@ -72,6 +72,8 @@ def test_structured_response_accepts_doubao_suggested_keys_alias():
     assert response["suggested_keywords"] == ["深海鱼", "DHA 鸡蛋"]
 
 
+
+
 @pytest.mark.asyncio
 async def test_collect_stores_answer_and_citations(monkeypatch):
     async def fake_run(command):

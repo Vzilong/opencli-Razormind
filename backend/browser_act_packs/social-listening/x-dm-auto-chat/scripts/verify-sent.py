@@ -22,7 +22,7 @@ def main():
     args = parser.parse_args()
 
     # Escape backticks and ${ for JS template literals
-    expected = args.expected_text.replace('\\', '\\\\').replace('`', '\\`').replace('${', '\\${')
+    expected = args.expected_text.replace("\\", "\\\\").replace("`", "\\`").replace("${", "\\${")
 
     js = f"""
     (() => {{
@@ -84,5 +84,6 @@ def main():
     """
     print(js)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()

@@ -14,7 +14,9 @@ def main():
     js = f"""
     (async function() {{
       try {{
-        var url = 'https://www.instagram.com/api/v1/media/{args.media_id}/comments/?can_support_threading=true&permalink_enabled=false{min_id_param}';
+        var url = 'https://www.instagram.com/api/v1/media/'
+          + '{args.media_id}/comments/?can_support_threading=true'
+          + '&permalink_enabled=false{min_id_param}';
         var r = await fetch(url, {{
           headers: {{
             'X-IG-App-ID': '936619743392459',

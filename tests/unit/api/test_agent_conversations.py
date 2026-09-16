@@ -2,13 +2,13 @@ import pytest
 from fastapi import HTTPException
 from sqlalchemy import select
 
-from backend.api.v1 import agent_conversations
 from backend.api.v1.chat import ChatReply
 from backend.models.agent_conversation import AgentConversationTurn
 from backend.models.identity import User, Workspace, WorkspaceMembership, WorkspaceRole
 from backend.schemas.common import ApiResponse
 from backend.security.identity import RequestIdentity, get_request_identity
 from backend.services import agent_conversation_service as conversation_service
+
 
 async def _seed_member(db_session, subject: str, slug: str):
     user = User(subject=subject)

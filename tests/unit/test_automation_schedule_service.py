@@ -4,6 +4,7 @@ import pytest
 import pytest_asyncio
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker
+
 from backend import ws_agent_manager
 from backend.models.automation import Automation
 from backend.models.edge_node import EdgeNode
@@ -15,8 +16,8 @@ from backend.models.operations_agent import (
     OperationsAgentRun,
     PublishedOperationsAgentVersion,
 )
-from backend.services import scheduled_run_recovery as recovery
 from backend.services import automation_schedule_service as service
+from backend.services import scheduled_run_recovery as recovery
 
 
 async def _seed_bound_automation(

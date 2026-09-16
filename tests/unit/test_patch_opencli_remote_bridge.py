@@ -1,9 +1,7 @@
-import os
-
 import json
+import os
 import subprocess
 from pathlib import Path
-
 
 ROOT = Path(__file__).resolve().parents[2]
 PATCHER = ROOT / "scripts" / "patch-opencli.js"
@@ -40,14 +38,16 @@ def test_remote_daemon_patch_forwards_preferred_context_without_local_spawn(tmp_
         "        const daemonHost = process.env.OPENCLI_DAEMON_HOST;\n"
         "        if (daemonHost && daemonHost !== '127.0.0.1' && daemonHost !== 'localhost') {\n"
         "            const remoteStatus = await fetchDaemonStatus({\n"
-        "                timeout: (timeoutSeconds ?? Math.ceil(DAEMON_SPAWN_TIMEOUT / 1000)) * 1000,\n"
+        "                timeout: "
+        "(timeoutSeconds ?? Math.ceil(DAEMON_SPAWN_TIMEOUT / 1000)) * 1000,\n"
         "                contextId,\n"
         "                preferredContextId,\n"
         "            });\n"
         "            if (!remoteStatus) throw new Error('remote daemon unavailable');\n"
         "            return;\n"
         "        }\n"
-        "        await ensureBrowserBridgeReady({ timeoutSeconds, contextId, preferredContextId });\n"
+        "        await ensureBrowserBridgeReady({ timeoutSeconds, contextId, "
+        "preferredContextId });\n"
         "    }\n"
         "}\n",
         encoding="utf-8",

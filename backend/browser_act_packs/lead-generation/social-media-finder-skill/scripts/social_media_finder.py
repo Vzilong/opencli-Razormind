@@ -43,7 +43,10 @@ def run_social_media_finder_task(api_key, people_name="Mike+Smith"):
     if "id" not in res:
         res_str = str(res)
         if "Invalid authorization" in res_str:
-            print("Error: Invalid authorization. Please check your BrowserAct API Key.", flush=True)
+            print(
+                "Error: Invalid authorization. Please check your BrowserAct API Key.",
+                flush=True,
+            )
         elif "concurrent" in res_str.lower() or "too many running tasks" in res_str.lower():
             print(
                 "Error: Concurrent task limit reached. Please upgrade your plan at "

@@ -49,8 +49,10 @@ async def test_sync_upserts_every_cookie_into_domain_keyed_jar(db_engine, monkey
         },
         "local_storage_data": {"example.com": {"ignored": "not v1 scope"}},
     }
-    with patch("backend.database.AsyncSessionLocal", _sessionmaker(db_engine)), \
-         patch("PyCookieCloud.PyCookieCloud", return_value=_fake_client(decrypted)):
+    with (
+        patch("backend.database.AsyncSessionLocal", _sessionmaker(db_engine)),
+        patch("PyCookieCloud.PyCookieCloud", return_value=_fake_client(decrypted)),
+    ):
         synced = await sync_from_cookiecloud("http://cc.local", "uuid-1", "pw")
         assert synced == 2
         cookies = await AuthManager().resolve_cookies("example.com")
@@ -81,7 +83,9 @@ async def test_sync_skips_cookies_missing_domain_or_name(db_engine, monkeypatch)
             ]
         }
     }
-    with patch("backend.database.AsyncSessionLocal", _sessionmaker(db_engine)), \
-         patch("PyCookieCloud.PyCookieCloud", return_value=_fake_client(decrypted)):
+    with (
+        patch("backend.database.AsyncSessionLocal", _sessionmaker(db_engine)),
+        patch("PyCookieCloud.PyCookieCloud", return_value=_fake_client(decrypted)),
+    ):
         synced = await sync_from_cookiecloud("http://cc.local", "uuid-1", "pw")
     assert synced == 0

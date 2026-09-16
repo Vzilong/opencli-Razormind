@@ -39,7 +39,11 @@ def test_load_normalizes_detail(lib):
 
 
 def test_categories_counts_sorted(lib):
-    assert brain.categories(brain.load(lib)) == [("collaborative", 1), ("structured", 1), ("wild", 2)]
+    assert brain.categories(brain.load(lib)) == [
+        ("collaborative", 1),
+        ("structured", 1),
+        ("wild", 2),
+    ]
 
 
 def test_filter_is_case_insensitive(lib):
@@ -164,7 +168,8 @@ def test_html_creates_missing_parent(lib, tmp_path):
 EXTRA = (
     '[{"category": "domain-specific", "technique_name": "Regulatory Inversion", '
     '"description": "Start from the compliance constraint and brainstorm what it unlocks."}, '
-    '{"category": "wild", "technique_name": "Extra Wild One", "description": "An added wild method."}]'
+    '{"category": "wild", "technique_name": "Extra Wild One", '
+    '"description": "An added wild method."}]'
 )
 
 
@@ -183,7 +188,9 @@ def test_extra_merges_into_categories(lib, extra, capsys):
 
 
 def test_extra_appears_in_list_and_random(lib, extra, capsys):
-    brain.main(["--file", str(lib), "--extra", str(extra), "list", "--category", "domain-specific"])
+    brain.main(
+        ["--file", str(lib), "--extra", str(extra), "list", "--category", "domain-specific"]
+    )
     assert "Regulatory Inversion" in capsys.readouterr().out
 
 
@@ -191,7 +198,15 @@ def test_extra_replaces_shipped_row_by_name(lib, extra, tmp_path, capsys):
     shipped = brain.load(Path(lib))[0]
     overlay = tmp_path / "replace.json"
     overlay.write_text(
-        json.dumps([{"category": shipped["category"], "technique_name": shipped["technique_name"], "description": "RETUNED"}]),
+        json.dumps(
+            [
+                {
+                    "category": shipped["category"],
+                    "technique_name": shipped["technique_name"],
+                    "description": "RETUNED",
+                }
+            ]
+        ),
         encoding="utf-8",
     )
     brain.main(["--file", str(lib), "--extra", str(overlay), "list", "--all"])
@@ -210,15 +225,26 @@ def test_extra_malformed_exits_cleanly(lib, tmp_path, capsys):
 
 def test_extra_is_first_class_in_html(lib, extra, tmp_path):
     out = tmp_path / "sel.html"
-    assert brain.main(["--file", str(lib), "--extra", str(extra), "html", "--out", str(out)]) == 0
+    assert (
+        brain.main(
+            ["--file", str(lib), "--extra", str(extra), "html", "--out", str(out)]
+        )
+        == 0
+    )
     doc = out.read_text(encoding="utf-8")
-    # custom technique is selectable and its new category renders without crashing (fallback glyph/hue)
+    # custom technique is selectable and its new category renders without
+    # crashing (fallback glyph/hue)
     assert "Regulatory Inversion" in doc
     assert "Domain Specific" in doc
 
 
 def test_extra_missing_file_returns_2(lib, tmp_path):
-    assert brain.main(["--file", str(lib), "--extra", str(tmp_path / "nope.json"), "categories"]) == 2
+    assert (
+        brain.main(
+            ["--file", str(lib), "--extra", str(tmp_path / "nope.json"), "categories"]
+        )
+        == 2
+    )
 
 
 def test_unknown_category_style_uses_fallback_glyph():

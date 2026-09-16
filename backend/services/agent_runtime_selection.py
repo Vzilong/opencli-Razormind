@@ -5,9 +5,9 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend import ws_agent_manager
 from backend.models.edge_node import EdgeNode
 from backend.schemas.operations_agent import AgentContractV2, AgentRuntimeBindingV2
-from backend import ws_agent_manager
 
 
 class RuntimeSelectionError(RuntimeError):

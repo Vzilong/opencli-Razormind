@@ -78,8 +78,14 @@ def test_fresh_generate_orders_and_defaults(tmp_path, capsys):
     data = load(status_file)
     keys = list(data["development_status"].keys())
     assert keys == [
-        "epic-1", "1-1-user-authentication", "1-2-account-management", "epic-1-retrospective",
-        "epic-2", "2-1-personality-system", "2-6a-split-story-with-punctuation", "epic-2-retrospective",
+        "epic-1",
+        "1-1-user-authentication",
+        "1-2-account-management",
+        "epic-1-retrospective",
+        "epic-2",
+        "2-1-personality-system",
+        "2-6a-split-story-with-punctuation",
+        "epic-2-retrospective",
     ]
     assert data["development_status"]["epic-1"] == "backlog"
     assert data["development_status"]["1-1-user-authentication"] == "backlog"
@@ -149,7 +155,11 @@ def test_legacy_statuses_merge_by_meaning_not_reset(tmp_path, capsys):
     data = load(status_file)
     assert data["development_status"]["1-2-account-management"] == "ready-for-dev"
     assert data["development_status"]["epic-1"] == "in-progress"
-    assert {"key": "1-2-account-management", "from": "drafted", "to": "ready-for-dev"} in result["legacy_mapped"]
+    assert {
+        "key": "1-2-account-management",
+        "from": "drafted",
+        "to": "ready-for-dev",
+    } in result["legacy_mapped"]
     assert not any("illegal" in w for w in result["warnings"])
     assert result["illegal"] == []
 
@@ -190,7 +200,10 @@ def test_fresh_rebuild_ignores_existing_statuses(tmp_path, capsys):
 def test_set_applies_explicit_statuses_even_downgrades(tmp_path, capsys):
     status_file = run_generate(
         tmp_path, existing=EXISTING,
-        extra=("--fresh", "--set", "1-1-user-authentication=in-progress", "--set", "epic-1=in-progress"),
+        extra=(
+            "--fresh", "--set", "1-1-user-authentication=in-progress",
+            "--set", "epic-1=in-progress",
+        ),
     )
     result = out_json(capsys)
     data = load(status_file)
@@ -232,7 +245,9 @@ def test_story_file_never_downgrades_done(tmp_path):
 
 
 def test_illegal_existing_status_warns_and_resets(tmp_path, capsys):
-    existing = EXISTING.replace("1-2-account-management: backlog", "1-2-account-management: shipped")
+    existing = EXISTING.replace(
+        "1-2-account-management: backlog", "1-2-account-management: shipped"
+    )
     status_file = run_generate(tmp_path, existing=existing)
     result = out_json(capsys)
     data = load(status_file)
@@ -294,7 +309,11 @@ def test_dry_run_in_sync_after_generate(tmp_path, capsys):
     ])
     result = out_json(capsys)
     assert result["in_sync"] is True
-    assert result["new_entries"] == [] and result["dropped_orphans"] == [] and result["illegal"] == []
+    assert (
+        result["new_entries"] == []
+        and result["dropped_orphans"] == []
+        and result["illegal"] == []
+    )
 
 
 def test_no_epics_fails_with_json(tmp_path, capsys):
@@ -385,7 +404,11 @@ def test_status_counts_and_recommendation(tmp_path, capsys):
 
 def test_status_maps_legacy_values(tmp_path, capsys):
     result = run_status(tmp_path, capsys)
-    assert {"key": "1-2-account-management", "from": "drafted", "to": "ready-for-dev"} in result["legacy_mapped"]
+    assert {
+        "key": "1-2-account-management",
+        "from": "drafted",
+        "to": "ready-for-dev",
+    } in result["legacy_mapped"]
 
 
 def test_status_open_action_items(tmp_path, capsys):
@@ -403,7 +426,9 @@ def test_status_malformed_action_items_are_flagged_not_dropped(tmp_path, capsys)
 
 
 def test_status_review_beats_ready(tmp_path, capsys):
-    fixture = STATUS_FIXTURE.replace("2-1-personality-system: backlog", "2-1-personality-system: review")
+    fixture = STATUS_FIXTURE.replace(
+        "2-1-personality-system: backlog", "2-1-personality-system: review"
+    )
     result = run_status(tmp_path, capsys, fixture=fixture)
     assert result["recommendation"]["skill"] == "bmad-code-review"
     assert result["recommendation"]["story_key"] == "2-1-personality-system"
@@ -411,7 +436,9 @@ def test_status_review_beats_ready(tmp_path, capsys):
 
 
 def test_status_in_progress_beats_all(tmp_path, capsys):
-    fixture = STATUS_FIXTURE.replace("2-1-personality-system: backlog", "2-1-personality-system: in-progress")
+    fixture = STATUS_FIXTURE.replace(
+        "2-1-personality-system: backlog", "2-1-personality-system: in-progress"
+    )
     result = run_status(tmp_path, capsys, fixture=fixture)
     assert result["recommendation"]["skill"] == "bmad-build"
     assert result["recommendation"]["story_key"] == "2-1-personality-system"
@@ -471,7 +498,9 @@ def test_status_odd_retro_key_reports_instead_of_crashing(tmp_path, capsys):
 
 
 def test_status_illegal_status_reported(tmp_path, capsys):
-    fixture = STATUS_FIXTURE.replace("2-1-personality-system: backlog", "2-1-personality-system: shipped")
+    fixture = STATUS_FIXTURE.replace(
+        "2-1-personality-system: backlog", "2-1-personality-system: shipped"
+    )
     result = run_status(tmp_path, capsys, fixture=fixture)
     assert {"key": "2-1-personality-system", "status": "shipped"} in result["illegal"]
 
@@ -492,7 +521,9 @@ def run_validate(tmp_path, capsys, content):
 
 
 def test_validate_clean_file(tmp_path, capsys):
-    clean = STATUS_FIXTURE.replace("1-2-account-management: drafted", "1-2-account-management: backlog")
+    clean = STATUS_FIXTURE.replace(
+        "1-2-account-management: drafted", "1-2-account-management: backlog"
+    )
     result = run_validate(tmp_path, capsys, clean)
     assert result["valid"] is True and result["problems"] == []
 
@@ -508,7 +539,11 @@ def test_validate_reports_problems_without_crashing(tmp_path, capsys):
     assert any("illegal story status 'shipped'" in p for p in result["problems"])
     assert any("unrecognized key 'weird-key'" in p for p in result["problems"])
     assert any("'last_updated' timestamp" in p for p in result["problems"])
-    assert {"key": "1-2-account-management", "from": "drafted", "to": "ready-for-dev"} in result["legacy_mapped"]
+    assert {
+        "key": "1-2-account-management",
+        "from": "drafted",
+        "to": "ready-for-dev",
+    } in result["legacy_mapped"]
 
 
 def test_validate_missing_file_and_bad_yaml(tmp_path, capsys):

@@ -126,7 +126,6 @@ test('all requested W5 wrappers and workspace settings remain wired', async () =
     assert.match(project, new RegExp(`\\b${hook}\\b`), `${hook} should be consumed by a page or component`)
   }
 
-  const endpoints = await read('lib/api/endpoints.ts')
   const workspaceEndpoints = await read('lib/api/workspace-endpoints.ts')
   const hooks = await read('lib/api/hooks.ts')
   const types = await read('lib/api/types.ts')

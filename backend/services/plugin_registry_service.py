@@ -11,12 +11,12 @@ from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.models.identity import Workspace
 from backend.models.browser import (
     BrowserInstance,
     BrowserRuntimeBundle,
     BrowserRuntimeDeployment,
 )
+from backend.models.identity import Workspace
 from backend.models.plugin_installation import PluginInstallation
 from backend.models.studio import (
     StudioProject,

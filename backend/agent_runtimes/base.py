@@ -21,7 +21,6 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-
 RUNTIME_CAPABILITY_STREAMING = "streaming"
 RUNTIME_CAPABILITY_RESUMABLE = "resumable"
 RUNTIME_CAPABILITY_PERSISTENT_SESSION = "persistent_session"
