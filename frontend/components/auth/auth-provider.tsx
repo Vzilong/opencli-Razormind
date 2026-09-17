@@ -452,7 +452,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [becomeAnonymous, developmentLoginEnabled])
 
   const signInWithOidc = useCallback(
-    async (returnTo = '/studio') => {
+    async (returnTo = '/launch') => {
       const manager = getOidcManager()
       if (!manager) throw new Error('OIDC 登录尚未配置')
       recoveryCoordinator.beginEpoch()

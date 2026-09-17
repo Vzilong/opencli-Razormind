@@ -57,6 +57,7 @@ class Settings(BaseSettings):
 
     # Application
     app_name: str = "opencli-admin"
+    native_chat_bindings: list[dict] = Field(default_factory=list)
     app_env: Literal["development", "staging", "production"] = "development"
     debug: bool = False
     secret_key: str = _EPHEMERAL_SECRET_KEY
@@ -159,6 +160,16 @@ class Settings(BaseSettings):
     # Empty (default) = auth disabled — dev posture, which the startup bind
     # guard only allows on a localhost bind. Env: API_AUTH_TOKEN.
     api_auth_token: str = ""
+    # MCP uses transport access and caller identity separately. Read these via
+    # Settings so native uvicorn launches honor .env as well as process env.
+    opencli_admin_api_url: str = "http://localhost:8031"
+    opencli_mcp_caller_token: str = ""
+    # Optional operator-configured SearXNG instance. Empty disables search;
+    # explicitly supplied public URLs remain available to the research tools.
+    searxng_url: str = ""
+    # Explicitly permits only the configured search service on a private
+    # network. It never applies to model/user-supplied source URLs.
+    searxng_allow_private: bool = False
     # Emergency first-run/recovery credential. Local administrator setup
     # verifies this value but never persists it as a daily login secret.
     bootstrap_admin_token: str = ""

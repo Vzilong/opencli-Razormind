@@ -7,6 +7,7 @@ from urllib.parse import urlparse
 
 import httpx
 from jsonschema import ValidationError, validate
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.models.browser import (
@@ -14,6 +15,7 @@ from backend.models.browser import (
     BrowserInstance,
     BrowserRuntimeBundle,
 )
+from backend.models.browser_space import BrowserSpace, BrowserSpaceTask
 from backend.schemas.browser import RuntimeBundleManifest
 from backend.services.browser_service import (
     BrowserRuntimeError,
@@ -104,7 +106,34 @@ async def invoke_capability(
     gate_authorized: bool = False,
     audit_input_payload: dict | None = None,
     commit_before_dispatch: bool = False,
+    space_task_id: str | None = None,
 ) -> BrowserCapabilityInvocation:
+    reserved_space = await session.scalar(
+        select(BrowserSpace)
+        .where(BrowserSpace.browser_instance_id == instance.id)
+        .where(BrowserSpace.status != "closed")
+    )
+    if reserved_space is not None:
+        if space_task_id is None:
+            raise BrowserRuntimeError(
+                "browser_space_reserved",
+                "reserved browser instances only accept an active Browser Space task",
+            )
+        task = await session.scalar(
+            select(BrowserSpaceTask).where(
+                BrowserSpaceTask.id == space_task_id,
+                BrowserSpaceTask.space_id == reserved_space.id,
+                BrowserSpaceTask.workspace_id == reserved_space.workspace_id,
+                BrowserSpaceTask.capability == capability_name,
+                BrowserSpaceTask.status == "running",
+                BrowserSpaceTask.cancel_requested.is_(False),
+            )
+        )
+        if task is None or reserved_space.control_mode != "agent":
+            raise BrowserRuntimeError(
+                "browser_space_control_denied",
+                "reserved browser instance is not controlled by a running agent task",
+            )
     deployment = await get_runtime_deployment(session, instance.id)
     bundle = (
         await get_runtime_bundle(session, instance.runtime_bundle_id)

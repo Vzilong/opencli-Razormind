@@ -10,8 +10,11 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 OwnerType = Literal["operator", "runtime_agent"]
 SpaceStatus = Literal["idle", "running", "closed", "error"]
+ControlMode = Literal["agent", "human"]
 TaskStatus = Literal["queued", "running", "completed", "failed", "cancelled"]
-EventKind = Literal["queued", "started", "completed", "failed", "cancel_requested", "cancelled"]
+EventKind = Literal[
+    "queued", "started", "completed", "failed", "cancel_requested", "cancelled", "control_changed"
+]
 
 
 class BrowserSpaceCreate(BaseModel):
@@ -59,6 +62,13 @@ class BrowserSpaceTaskCreate(BaseModel):
         return value
 
 
+class BrowserSpaceControlUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    mode: ControlMode
+    expected_revision: int = Field(ge=0)
+
+
 class BrowserSpaceTaskRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -81,6 +91,7 @@ class BrowserSpaceRead(BaseModel):
     owner_type: OwnerType
     owner_id: str
     status: SpaceStatus
+    control_mode: ControlMode
     granted_capabilities: list[str]
     revision: int
     last_error_code: str | None

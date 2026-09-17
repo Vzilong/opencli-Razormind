@@ -22,6 +22,7 @@ function browserSpace(overrides = {}) {
     binding_id: null,
     owner_type: 'operator',
     owner_id: 'agent-7',
+    control_mode: 'agent',
     status: 'idle',
     granted_capabilities: ['snapshot'],
     revision: 1,
@@ -49,6 +50,8 @@ async function mockBrowserSpaces(page, options = {}) {
     events: options.events ?? [],
     createError: options.createError,
     submitError: options.submitError,
+    controlError: options.controlError,
+    controlCalls: [],
   }
   await page.addInitScript(() => sessionStorage.setItem('opencli.bootstrapIdentityToken', 'test-identity'))
   await page.route('**/api/v1/**', async (route) => {
@@ -58,10 +61,10 @@ async function mockBrowserSpaces(page, options = {}) {
       return route.fulfill({
         status,
         contentType: 'application/json',
-        body: JSON.stringify({ data }),
+        body: JSON.stringify({ success: true, data }),
       })
     }
-    if (url.pathname === '/api/v1/auth/me') {
+    if (url.pathname.endsWith('/auth/me')) {
       return json({
         subject: 'test-agent',
         email: null,
@@ -69,7 +72,7 @@ async function mockBrowserSpaces(page, options = {}) {
         username: null,
         picture: null,
         is_platform_admin: true,
-        auth_method: 'development',
+        auth_method: 'bootstrap',
       })
     }
     if (url.pathname === '/api/v1/workspaces') return json([workspace])
@@ -133,13 +136,31 @@ async function mockBrowserSpaces(page, options = {}) {
         error: null,
       })
     }
+    if (url.pathname.endsWith('/space-1/control') && request.method() === 'POST') {
+      const payload = request.postDataJSON()
+      state.controlCalls.push(payload)
+      if (state.controlError) {
+        return route.fulfill({
+          status: 409,
+          contentType: 'application/json',
+          body: JSON.stringify({ detail: state.controlError }),
+        })
+      }
+      state.spaces[0].control_mode = payload.mode
+      state.spaces[0].revision += 1
+      state.events = [...state.events, { id: `event-control-${state.events.length + 1}`, sequence: state.events.length + 1, kind: 'control_changed', payload: { mode: payload.mode }, created_at: '2026-01-01T00:00:00Z' }]
+      return json(state.spaces[0])
+    }
     if (url.pathname.endsWith('/space-1/close')) {
       state.spaces[0].status = 'closed'
       return json(state.spaces[0])
     }
     if (url.pathname.endsWith('/space-1/events')) return json(state.events)
-    return route.fallback()
+    // Other panels on /browsers must stay inside this mocked API boundary.
+    // Sending the fixture identity to a real API causes unrelated 401s to log out the page.
+    return json([])
   })
+  return state
 }
 
 test('creates a space only from an allowed existing browser instance', async ({ page }) => {
@@ -184,4 +205,35 @@ test('confirms cancellation and close before sending lifecycle actions', async (
   await page.getByRole('button', { name: '关闭 Space' }).click()
   await page.getByRole('button', { name: '确认关闭' }).click()
   await expect(page.getByText('Browser Space 已关闭')).toBeVisible()
+})
+
+test('requires a second confirmation before pausing Agent control and then blocks task submission', async ({ page }) => {
+  const state = await mockBrowserSpaces(page, { spaces: [browserSpace({ control_mode: 'agent', revision: 4 })] })
+  await page.goto('/browsers')
+  await expect(page.getByText('Agent 控制', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '暂停 Agent，人工接管' }).click()
+  expect(state.controlCalls).toEqual([])
+  await page.getByRole('button', { name: '确认暂停 Agent，人工接管' }).click()
+  await expect.poll(() => state.controlCalls.length).toBe(1)
+  expect(state.controlCalls[0]).toEqual({ mode: 'human', expected_revision: 4 })
+  await expect(page.getByText('当前由人工接管。请先交回 Agent 控制权后再提交任务。')).toBeVisible()
+  await expect(page.getByRole('button', { name: '提交任务' })).toBeDisabled()
+  await expect(page.getByText('仅暂停平台自动操作，请使用该实例已有浏览入口人工操作。')).toBeVisible()
+})
+
+test('does not pretend a running task can be stopped before control handoff', async ({ page }) => {
+  await mockBrowserSpaces(page, { spaces: [browserSpace({ control_mode: 'agent', status: 'running', latest_task: browserTask('running') })] })
+  await page.goto('/browsers')
+  await expect(page.getByText('当前任务仍在运行或排队；请先等待结束或取消确认。')).toBeVisible()
+  await expect(page.getByRole('button', { name: '暂停 Agent，人工接管' })).toBeDisabled()
+})
+
+test('keeps Agent control after a stale control revision response', async ({ page }) => {
+  const state = await mockBrowserSpaces(page, { spaces: [browserSpace({ revision: 4 })], controlError: 'stale_revision' })
+  await page.goto('/browsers')
+  await page.getByRole('button', { name: '暂停 Agent，人工接管' }).click()
+  await page.getByRole('button', { name: '确认暂停 Agent，人工接管' }).click()
+  await expect.poll(() => state.controlCalls.length).toBe(1)
+  await expect(page.getByText('Agent 控制', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: '确认暂停 Agent，人工接管' })).toBeVisible()
 })

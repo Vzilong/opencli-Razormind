@@ -1,8 +1,9 @@
 'use client'
 
 import { BrainCircuit, Braces, ChartNoAxesCombined, Database, LayoutDashboard, Network, Settings2, Workflow } from 'lucide-react'
-import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 
+import { buildProjectNavigationUrl, parseRunNavigation } from '@/lib/studio/run-navigation'
 import { cn } from '@/lib/utils'
 
 export type ProjectNavigationSection =
@@ -36,27 +37,17 @@ export function ProjectNavigation({
   projectId: string | null
   workflowId?: string | null
 }) {
-  const overviewHref = workspaceId && projectId
-    ? `/studio/projects/${projectId}?workspace=${workspaceId}`
-    : null
-  const orchestrationHref = workspaceId && projectId
-    ? `/studio/workflow?workspace=${workspaceId}&project=${projectId}${workflowId ? `&workflow=${workflowId}` : ''}`
-    : null
-  const dataHref = workspaceId && projectId
-    ? `/studio/projects/${projectId}/data?workspace=${workspaceId}${workflowId ? `&workflow=${workflowId}` : ''}`
-    : null
-  const evidenceHref = workspaceId && projectId
-    ? `/studio/projects/${projectId}/evidence?workspace=${workspaceId}${workflowId ? `&workflow=${workflowId}` : ''}`
-    : null
-  const relationshipsHref = workspaceId && projectId
-    ? `/studio/projects/${projectId}/relationships?workspace=${workspaceId}${workflowId ? `&workflow=${workflowId}` : ''}`
-    : null
-  const apiAccessHref = workspaceId && projectId
-    ? `/studio/projects/${projectId}/api?workspace=${workspaceId}${workflowId ? `&workflow=${workflowId}` : ''}`
-    : null
-  const operationsHref = workspaceId && projectId
-    ? `/studio/projects/${projectId}/operations?workspace=${workspaceId}${workflowId ? `&workflow=${workflowId}` : ''}`
-    : null
+  const searchParams = useSearchParams()
+  const current = parseRunNavigation(searchParams)
+  current.project ??= projectId ?? undefined
+  const scope = { workspace: workspaceId, project: projectId, workflow: workflowId }
+  const overviewHref = buildProjectNavigationUrl('overview', scope, current)
+  const orchestrationHref = buildProjectNavigationUrl('orchestration', scope, current)
+  const dataHref = buildProjectNavigationUrl('data', scope, current)
+  const evidenceHref = buildProjectNavigationUrl('evidence', scope, current)
+  const relationshipsHref = buildProjectNavigationUrl('relationships', scope, current)
+  const apiAccessHref = buildProjectNavigationUrl('apiAccess', scope, current)
+  const operationsHref = buildProjectNavigationUrl('operations', scope, current)
   const sectionHrefs = {
     overview: overviewHref,
     orchestration: orchestrationHref,
@@ -82,9 +73,9 @@ export function ProjectNavigation({
         )
 
         return href ? (
-          <Link key={section.id} href={href} aria-current={isActive ? 'page' : undefined} className={className}>
+          <a key={section.id} href={href} aria-current={isActive ? 'page' : undefined} className={className}>
             <Icon className="mr-1.5 size-3.5" aria-hidden />{section.label}
-          </Link>
+          </a>
         ) : (
           <span key={section.id} className={className} aria-disabled="true" title="项目范围能力将在后续生命周期接线中开放">
             <Icon className="mr-1.5 size-3.5" aria-hidden />{section.label}

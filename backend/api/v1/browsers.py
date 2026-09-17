@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import json
 import logging
 import secrets
 import socket
@@ -52,6 +53,8 @@ def _runtime_http_error(exc: browser_service.BrowserRuntimeError) -> HTTPExcepti
             "system_bundle_immutable",
             "bundle_in_use",
             "profile_in_use",
+            "browser_space_reserved",
+            "browser_space_control_denied",
         }
         else 400
     )
@@ -486,21 +489,24 @@ async def remove_instance(
     if endpoint not in pool.endpoints:
         raise HTTPException(status_code=404, detail=f"Endpoint {endpoint!r} not in pool")
 
-    if isinstance(pool, LocalBrowserPool):
-        pool.remove_endpoint(endpoint)
-
     result = await db.execute(select(BrowserInstance).where(BrowserInstance.endpoint == endpoint))
     inst = result.scalar_one_or_none()
     if inst:
+        from backend.services.browser_account_service import require_unassigned
+
+        await require_unassigned(db, inst.id)
         await db.delete(inst)
         await db.commit()
+
+    if isinstance(pool, LocalBrowserPool):
+        pool.remove_endpoint(endpoint)
 
     logger.info("Removed pool entry: %s", endpoint)
     return ApiResponse.ok({"removed": endpoint, "total": len(pool.endpoints)})
 
 
 @router.delete("/chrome-instances/{n}", response_model=ApiResponse[dict])
-async def remove_chrome_instance(n: int) -> ApiResponse:
+async def remove_chrome_instance(n: int, db: AsyncSession = Depends(get_db)) -> ApiResponse:
     """Stop and remove agent-N (N >= 2). Instance 1 is managed by docker-compose."""
     if n < 2:
         raise HTTPException(status_code=400, detail="Instance 1 is managed by docker-compose")
@@ -510,6 +516,13 @@ async def remove_chrome_instance(n: int) -> ApiResponse:
     pool = get_pool()
     name = f"agent-{n}"
     endpoint = f"http://{name}:19222"
+
+    from backend.models.browser import BrowserInstance
+    from backend.services.browser_account_service import require_unassigned
+
+    instance = await db.scalar(select(BrowserInstance).where(BrowserInstance.endpoint == endpoint))
+    if instance:
+        await require_unassigned(db, instance.id)
 
     client = docker_client()
     try:
@@ -653,7 +666,25 @@ async def agent_ws_endpoint(ws: WebSocket) -> None:
 
         # ── 3. Receive loop: results + pings ──────────────────────────────────
         while True:
-            msg = await ws.receive_json()
+            packet = await ws.receive()
+            if packet["type"] == "websocket.disconnect":
+                raise WebSocketDisconnect(packet.get("code", 1000))
+            binary = packet.get("bytes")
+            if isinstance(binary, bytes):
+                try:
+                    await ws_agent_manager.resolve_terminal_binary(binary, source_ws=ws)
+                except ValueError:
+                    await ws.close(code=1008, reason="Malformed terminal frame")
+                    return
+                continue
+            text = packet.get("text")
+            try:
+                msg = json.loads(text) if isinstance(text, str) else None
+            except json.JSONDecodeError:
+                msg = None
+            if not isinstance(msg, dict):
+                await ws.close(code=1008, reason="Malformed control frame")
+                return
             msg_type = msg.get("type")
             if msg_type == "result":
                 ws_agent_manager.resolve_response(msg.get("request_id", ""), msg, source_ws=ws)
@@ -663,6 +694,14 @@ async def agent_ws_endpoint(ws: WebSocket) -> None:
                 )
             elif msg_type == "agent_result":
                 ws_agent_manager.resolve_agent_result(msg.get("request_id", ""), msg, source_ws=ws)
+            elif msg_type == "agent_task_status_result":
+                ws_agent_manager.resolve_agent_task_status(
+                    msg.get("request_id", ""), msg, source_ws=ws
+                )
+            elif msg_type == "terminal_response":
+                ws_agent_manager.resolve_terminal_response(msg, source_ws=ws)
+            elif msg_type == "terminal_event":
+                await ws_agent_manager.resolve_terminal_event(msg, source_ws=ws)
             elif msg_type == "ping":
                 await ws.send_json({"type": "pong"})
             else:

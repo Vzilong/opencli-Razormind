@@ -32,6 +32,11 @@ class BrowserSpaceStatus(StrEnum):
     ERROR = "error"
 
 
+class BrowserSpaceControlMode(StrEnum):
+    AGENT = "agent"
+    HUMAN = "human"
+
+
 class BrowserSpaceTaskStatus(StrEnum):
     QUEUED = "queued"
     RUNNING = "running"
@@ -47,6 +52,7 @@ class BrowserSpaceEventKind(StrEnum):
     FAILED = "failed"
     CANCEL_REQUESTED = "cancel_requested"
     CANCELLED = "cancelled"
+    CONTROL_CHANGED = "control_changed"
 
 
 _ACTIVE_SPACE_STATUSES = ("idle", "running", "error")
@@ -66,6 +72,10 @@ class BrowserSpace(TimestampMixin):
             "status IN ('idle', 'running', 'closed', 'error')",
             name="ck_browser_spaces_status",
         ),
+        CheckConstraint(
+            "control_mode IN ('agent', 'human')",
+            name="ck_browser_spaces_control_mode",
+        ),
     )
 
     workspace_id: Mapped[str] = mapped_column(
@@ -81,6 +91,9 @@ class BrowserSpace(TimestampMixin):
     owner_id: Mapped[str] = mapped_column(String(255), nullable=False)
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, default=BrowserSpaceStatus.IDLE.value
+    )
+    control_mode: Mapped[str] = mapped_column(
+        String(20), nullable=False, default=BrowserSpaceControlMode.AGENT.value
     )
     granted_capabilities: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     revision: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -162,7 +175,8 @@ class BrowserSpaceEvent(TimestampMixin):
     __tablename__ = "browser_space_events"
     __table_args__ = (
         CheckConstraint(
-            "kind IN ('queued', 'started', 'completed', 'failed', 'cancel_requested', 'cancelled')",
+            "kind IN ('queued', 'started', 'completed', 'failed', 'cancel_requested', "
+            "'cancelled', 'control_changed')",
             name="ck_browser_space_events_kind",
         ),
     )

@@ -73,6 +73,12 @@ class OpenAICompatAdapter(ProviderAdapter):
 
         api_key = self.provider.api_key or ""
         base_url = self.provider.base_url or None
+        if self._allow_private:
+            if not base_url or not base_url.strip():
+                raise LlmAdapterError("Local model providers require an explicit base_url.")
+            # The SDK requires a nonempty key even for unauthenticated local
+            # servers. This public placeholder never replaces a configured key.
+            api_key = api_key or "local-no-key"
         if base_url:
             try:
                 base_url, ips = await avalidate_public_url_and_ip(
@@ -122,6 +128,8 @@ class OpenAICompatAdapter(ProviderAdapter):
         return await self._get_client()
 
     def _resolve_model(self, model: str | None) -> str:
+        if self._allow_private and not (model or self.provider.default_model):
+            raise LlmAdapterError("Select a model served by the local provider before chatting.")
         return model or self.provider.default_model or "gpt-4o-mini"
 
     def _sanitize(self, message: str) -> str:

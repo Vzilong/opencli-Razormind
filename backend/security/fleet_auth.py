@@ -85,13 +85,9 @@ FLEET_AUTH_ERROR_CODE = "fleet_auth_invalid"
 # Receiver v2 supplies independent MAC authentication; Studio remains fleet-authenticated.
 CONTROLLED_RECEIVER_V2_PREFIX = "/api/v1/controlled-receiver/v2/"
 
-# Local login is intentionally the only unauthenticated API route. Once the
-# user has a local bearer session, the identity dependency authenticates it.
-PUBLIC_PATHS = frozenset({"/api/v1/auth/login"})
-
-# Local login is intentionally the only unauthenticated API route. Once the
-# user has a local bearer session, the identity dependency authenticates it.
-PUBLIC_PATHS = frozenset({"/api/v1/auth/login"})
+# Local login bootstraps the local bearer session. The native terminal WebSocket
+# performs its own short-lived signed-ticket check before accepting a client.
+PUBLIC_PATHS = frozenset({"/api/v1/auth/login", "/api/v1/chat/terminal/ws"})
 
 _LOCALHOST_HOSTS = frozenset({"localhost", "::1"})
 
@@ -135,18 +131,6 @@ def enforce_bind_guard(host: str, token: str) -> None:
         "any non-localhost bind. Set API_AUTH_TOKEN, or bind 127.0.0.1 for "
         "local development."
     )
-
-def _is_local_session(credential: str) -> bool:
-    try:
-        claims = jwt.decode(
-            credential,
-            get_settings().secret_key,
-            algorithms=["HS256"],
-        )
-    except JWTError:
-        return False
-    return claims.get("auth_method") == "local" and claims.get("sub") == "local-admin"
-
 
 def _is_local_session(credential: str) -> bool:
     try:

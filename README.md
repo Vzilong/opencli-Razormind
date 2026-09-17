@@ -5,7 +5,7 @@
 [![License](https://img.shields.io/github/license/2233admin/opencli-Razormind)](LICENSE)
 [![Docker](https://img.shields.io/badge/docker-amd64%20%7C%20arm64-2496ED?logo=docker&logoColor=white)](https://github.com/2233admin/opencli-Razormind/pkgs/container/opencli-admin-api)
 
-opencli-Razormind 是一个开源、自托管的研究与情报管线。它把浏览器 / OpenCLI / RSS / API 数据采集、可视化工作流、AI 处理、证据关系和结果交付，统一到一个可运行、可审计的系统中。
+opencli-Razormind 是一个开源、自托管的研究与情报平台。平台 Agent 负责获取、整理和分析信息，保留来源与运行记录；Codex、Claude Code 等下游 Agent 通过 API / MCP 查询项目内的成果。
 
 ![License](https://img.shields.io/badge/license-Apache--2.0-blue)
 ![Stars](https://img.shields.io/github/stars/2233admin/opencli-Razormind)
@@ -15,6 +15,22 @@ opencli-Razormind 是一个开源、自托管的研究与情报管线。它把�
 - **一句话**：开源自托管的研究情报管线，从采集到交付一个系统跑完。
 - **适合谁**：做研究或情报收集，想把采集、工作流、AI 处理、证据和交付串起来的。
 - **不适合谁**：只需要一个单点爬虫脚本、不想运维一套系统的。
+
+当前源码的操作路径、Agent 接入方式和已知缺口见[使用说明（核对稿）](docs/usage/product-manual.md)及[产品契约核对记录](docs/usage/product-contract-findings.md)。两份文档区分现场观察、测试结果、实现依据和设计目标，不代表完整持续采集链路已经验收。
+
+## 从一个场景开始
+
+当前开发分支的 `/launch` 入口聚焦以下三个场景；这些新增能力不属于下面的旧版 `v0.4.1` 镜像。完整工作流编辑、浏览器账号和既有项目仍可从原入口使用。
+
+| 场景 | 输入 | 预期成果 |
+| --- | --- | --- |
+| 公开资料研究 | 一个问题，可选公开网页 URL | 带来源引用的研究结论、采集时间与未解决问题 |
+| 竞品网页变化跟踪 | 一组固定的公开网页 URL | 与各网页上次成功采集结果的差异；首次运行建立基线 |
+| 项目知识查询 | 项目和检索词 | 已授权项目内的匹配记录与来源，供人和下游 Agent 使用 |
+
+先在平台配置可用模型，再选择工作区和项目运行研究。仅输入问题的网页研究还需要配置启用 JSON 输出的 SearXNG 服务（`SEARXNG_URL`）；提供公开 URL 时可以直接采集。界面的就绪状态会显示缺失配置，运行结果中的缺口需与结论一起阅读。变化跟踪当前由用户发起每次运行，定时工作流属于原有高级入口。
+
+配置步骤见[内置研究与变化跟踪](docs/usage/research.md)，下游接入见[Codex / Claude Code 的 API 与 MCP 配置](docs/usage/downstream-agents.md)。当前真实运行的证据与尚未验证的范围见[首发验收记录](docs/testing/launch-live-acceptance-2026-09-14.md)。
 
 ## 为什么做这个
 

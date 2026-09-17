@@ -14,6 +14,9 @@ const nextConfig = {
   output: "standalone",
   allowedDevOrigins: ['127.0.0.1'],
   distDir: process.env.OPENCLI_NEXT_DIST_DIR ?? '.next',
+  experimental: {
+    proxyTimeout: 660_000,
+  },
   turbopack: {
     root: FRONTEND_ROOT,
   },

@@ -226,6 +226,11 @@ services:
       BOOTSTRAP_ADMIN_TOKEN: ${BOOTSTRAP_ADMIN_TOKEN:?Set BOOTSTRAP_ADMIN_TOKEN in .env or run scripts/install.sh}
       OPENCLI_MCP_ALLOWED_HOSTS: ${OPENCLI_MCP_ALLOWED_HOSTS:-}
       OPENCLI_MCP_ALLOWED_ORIGINS: ${OPENCLI_MCP_ALLOWED_ORIGINS:-}
+      # The built-in MCP adapter reaches this same API container, not the
+      # host-published port. HTTP caller identity is forwarded per request.
+      OPENCLI_ADMIN_API_URL: http://127.0.0.1:8000
+      SEARXNG_URL: ${SEARXNG_URL:-}
+      SEARXNG_ALLOW_PRIVATE: ${SEARXNG_ALLOW_PRIVATE:-false}
       # Docker cannot read the Windows credential manager used by lark-cli.
       # Keep Feishu CLI authentication on the host and call its read-only bridge.
       LARK_CLI_BRIDGE_URL: ${LARK_CLI_BRIDGE_URL:-http://host.docker.internal:18765/feishu/records}

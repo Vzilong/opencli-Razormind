@@ -230,3 +230,27 @@ async def test_ws_wrong_query_token_is_rejected_4401(auth_enabled):
     await _wrapped(recorder)(scope, recorder.receive, recorder.send)
     assert recorder.app_called is False
     assert recorder.sent[0]["code"] == 4401
+
+
+@pytest.mark.asyncio
+async def test_native_terminal_ws_defers_to_signed_ticket_auth(auth_enabled):
+    recorder = _Recorder()
+    scope = _ws_scope("/api/v1/chat/terminal/ws")
+
+    await _wrapped(recorder)(scope, recorder.receive, recorder.send)
+
+    assert recorder.app_called is True
+    assert recorder.sent == []
+
+
+@pytest.mark.asyncio
+async def test_native_terminal_ws_public_exception_is_exact(auth_enabled):
+    recorder = _Recorder()
+    scope = _ws_scope("/api/v1/chat/terminal/ws/extra")
+
+    await _wrapped(recorder)(scope, recorder.receive, recorder.send)
+
+    assert recorder.app_called is False
+    assert recorder.sent == [
+        {"type": "websocket.close", "code": 4401, "reason": "Invalid or missing API token"}
+    ]

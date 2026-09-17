@@ -37,13 +37,13 @@ import {
 } from '@/components/ui/table'
 import {
   useBatchDeleteRecords,
-  useClearAllRecords,
   useDeleteRecord,
   useRecord,
   useRecords,
 } from '@/lib/api/hooks'
 import type { CollectedRecord } from '@/lib/api/types'
 import { formatRelative } from '@/lib/format'
+import { KnowledgeScopeFields, useKnowledgeScope } from '@/components/knowledge/knowledge-scope'
 
 const PAGE_SIZE = 50
 const MAX_VISIBLE_FIELDS = 7
@@ -128,17 +128,19 @@ function LineagePanel({ record }: { record: CollectedRecord }) {
 }
 
 export default function RecordsPage() {
+  const { scope, setScope } = useKnowledgeScope()
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [selectedRecord, setSelectedRecord] = useState<CollectedRecord | null>(null)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [confirmBatchDelete, setConfirmBatchDelete] = useState(false)
-  const [confirmClearAll, setConfirmClearAll] = useState(false)
   const recordDetailQuery = useRecord(selectedRecord?.id ?? null)
   const deleteRecord = useDeleteRecord()
   const batchDeleteRecords = useBatchDeleteRecords()
-  const clearAllRecords = useClearAllRecords()
   const recordsQuery = useRecords({
+    enabled: Boolean(scope.workspaceId),
+    ...(scope.workspaceId ? { workspace_id: scope.workspaceId } : {}),
+    ...(scope.projectId ? { project_id: scope.projectId } : {}),
     ...(search ? { search } : {}),
     page,
     limit: PAGE_SIZE,
@@ -176,7 +178,8 @@ export default function RecordsPage() {
     setPage(1)
     setSelectedRecord(null)
     setSelectedIds(new Set())
-  }, [search])
+    setConfirmBatchDelete(false)
+  }, [search, scope.workspaceId, scope.projectId])
 
   useEffect(() => {
     setSelectedIds(new Set())
@@ -196,6 +199,8 @@ export default function RecordsPage() {
       tabs={<RouteTabs tabs={DATA_EXPLORER_TABS} />}
       className="max-w-none"
     >
+      <KnowledgeScopeFields scope={scope} onChange={setScope} />
+      {scope.workspaceId ? <p className="text-xs text-muted-foreground">按工作区与可选项目范围筛选记录；旧品牌分类仅保留在兼容入口中。</p> : <p className="text-xs text-muted-foreground">先选择工作区后才会加载记录，避免把未指定范围的数据当作当前资料库可访问内容。</p>}
       <section className="overflow-hidden rounded-xl border bg-card">
         <header className="grid gap-4 border-b px-4 py-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
           <div className="min-w-0">
@@ -237,7 +242,7 @@ export default function RecordsPage() {
               <Input
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                placeholder="搜索全部记录…"
+                placeholder={scope.workspaceId ? '搜索当前范围的记录…' : '搜索全部记录…'}
                 className="h-9 pl-8"
               />
             </div>
@@ -266,29 +271,6 @@ export default function RecordsPage() {
                 {confirmBatchDelete ? '确认批量删除' : `删除所选（${selectedIds.size}）`}
               </Button>
             ) : null}
-            <Button
-              size="sm"
-              variant={confirmClearAll ? 'destructive' : 'ghost'}
-              disabled={clearAllRecords.isPending}
-              onClick={() => {
-                if (!confirmClearAll) {
-                  setConfirmClearAll(true)
-                  return
-                }
-                clearAllRecords.mutate(undefined, {
-                  onSuccess: (result) => {
-                    toast.success(`已清空 ${result.data.deleted} 条记录`)
-                    setConfirmClearAll(false)
-                    setSelectedIds(new Set())
-                  },
-                  onError: (error) =>
-                    toast.error(error instanceof Error ? error.message : '清空记录失败'),
-                })
-              }}
-            >
-              <Trash2 className="size-3.5" />
-              {confirmClearAll ? '确认清空全部' : '清空全部'}
-            </Button>
           </div>
         </div>
 

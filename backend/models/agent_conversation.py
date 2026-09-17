@@ -1,6 +1,6 @@
 from enum import StrEnum
 
-from sqlalchemy import JSON, CheckConstraint, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, JSON, CheckConstraint, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.models.base import TimestampMixin
@@ -16,6 +16,15 @@ class AgentConversationTurnStatus(StrEnum):
     COMPLETED = "completed"
     PROPOSAL = "proposal"
     FAILED = "failed"
+
+
+class AgentTerminalSessionStatus(StrEnum):
+    STARTING = "starting"
+    ACTIVE = "active"
+    STOPPING = "stopping"
+    EXITED = "exited"
+    FAILED = "failed"
+    LOST = "lost"
 
 
 class AgentConversation(TimestampMixin):
@@ -87,3 +96,45 @@ class AgentConversationTurn(TimestampMixin):
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class AgentTerminalSession(TimestampMixin):
+    """Technical PTY mapping owned by one durable Agent conversation."""
+
+    __tablename__ = "agent_terminal_sessions"
+    __table_args__ = (
+        UniqueConstraint("conversation_id", name="uq_agent_terminal_sessions_conversation"),
+        CheckConstraint(
+            "runtime_id IN ('codex', 'omp')",
+            name="ck_agent_terminal_sessions_runtime",
+        ),
+        CheckConstraint(
+            "status IN ('starting', 'active', 'stopping', 'exited', 'failed', 'lost')",
+            name="ck_agent_terminal_sessions_status",
+        ),
+        CheckConstraint("revision >= 0", name="ck_agent_terminal_sessions_revision_nonnegative"),
+    )
+
+    conversation_id: Mapped[str] = mapped_column(
+        ForeignKey("agent_conversations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    workspace_id: Mapped[str] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    runtime_id: Mapped[str] = mapped_column(String(16), nullable=False)
+    agent_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    binding_revision: Mapped[str] = mapped_column(String(64), nullable=False)
+    started_by_user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    status: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        default=AgentTerminalSessionStatus.STARTING.value,
+        server_default="starting",
+    )
+    exit_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    cleanup_confirmed: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="0"
+    )
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")

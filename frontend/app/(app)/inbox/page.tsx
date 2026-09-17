@@ -11,12 +11,12 @@ import {
   useState,
   type ReactNode,
 } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import {
   AlertCircle,
   Bell,
   CheckCircle2,
   Clock3,
-  Inbox,
   ListFilter,
   LoaderCircle,
   RefreshCw,
@@ -27,11 +27,14 @@ import {
 } from 'lucide-react'
 
 import { TasksPane } from '@/components/action-center/tasks-pane'
+import { useAuth } from '@/components/auth/auth-provider'
 import { NotificationsPane } from '@/components/action-center/notifications-pane'
 import { ControlActionsLedger } from '@/components/control/control-actions-ledger'
-import { ApprovalQueueDetail, QueueDetail } from '@/components/inbox/queue-detail'
+import { ApprovalQueueDetail, ProposalQueueDetail, QueueDetail } from '@/components/inbox/queue-detail'
+import { ProjectActivity } from '@/components/inbox/project-activity'
 import { BACKEND_HINT, ErrorState, LoadingState } from '@/components/shell/data-states'
 import { ACTION_CENTER_TABS, RouteTabs } from '@/components/shell/route-tabs'
+import { readWorkspacePreference, workspacePreferenceStorageKey, writeWorkspacePreference } from '@/lib/workspace-preference'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Kbd } from '@/components/ui/kbd'
@@ -50,6 +53,8 @@ import type {
   OperationsWorkItem,
 } from '@/lib/api/types'
 import { resolveApprovalAvailability, shouldIgnoreInboxShortcut } from '@/lib/inbox/workbench-state'
+import { useReorderMotion } from '@/components/experience/use-reorder-motion'
+import { listOperationsInbox } from '@/lib/api/endpoints'
 import { formatRelative } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
@@ -78,6 +83,7 @@ interface QueueItem {
   detailLabel: string
   detailValue: string
   approval?: OperationsWorkItem
+  proposal?: OperationsWorkItem
 }
 
 const SECTION_META: Record<
@@ -235,6 +241,10 @@ function approvalToQueueItem(approval: OperationsWorkItem, workspaceName: string
   }
 }
 
+function proposalToQueueItem(proposal: OperationsWorkItem, workspaceName: string): QueueItem {
+  return { id: `proposal-${proposal.id}`, groupKey: `proposal:${proposal.id}`, section: 'review', eyebrow: `Agent 提案 · ${workspaceName}`, title: evidenceText(proposal.evidence, ['title', 'action', 'operation']) ?? '等待确认的 Agent 提案', summary: compact(proposal.reason, '') || evidenceText(proposal.evidence, ['summary', 'description']) || '请在原 Agent 会话中确认或调整此提案。', status: proposal.status, createdAt: proposal.created_at, href: '/inbox', hrefLabel: '查看提案', sourceName: workspaceName, occurrenceCount: 1, detailLabel: '提案版本', detailValue: String(proposal.evidence.proposal_version ?? '—'), proposal }
+}
+
 function groupQueueItems(items: QueueItem[]) {
   const grouped = new Map<string, QueueItem>()
 
@@ -320,6 +330,37 @@ function QueueRow({
   )
 }
 
+function ReorderableQueue({
+  items,
+  selectedId,
+  onSelect,
+}: {
+  items: QueueItem[]
+  selectedId: string | null
+  onSelect: (id: string) => void
+}) {
+  const ref = useReorderMotion<HTMLDivElement>(items.map((item) => item.id))
+  return (
+    <div ref={ref} role="listbox" aria-label="待处理信号">
+      {items.map((item, index) => {
+        const showSection = index === 0 || items[index - 1]?.section !== item.section
+        const meta = SECTION_META[item.section]
+        return (
+          <div key={item.id} data-reorder-id={item.id}>
+            {showSection ? (
+              <div className="sticky top-0 z-[1] flex h-8 items-center gap-2 border-b bg-background/95 px-3 backdrop-blur">
+                <span aria-hidden="true" className={cn('size-1.5 rounded-full', meta.dot)} />
+                <span className="text-[11px] font-semibold text-muted-foreground">{meta.label}</span>
+              </div>
+            ) : null}
+            <QueueRow item={item} selected={selectedId === item.id} onSelect={() => onSelect(item.id)} />
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 
 
 function InboxLoadingFallback() {
@@ -341,6 +382,7 @@ function InboxLoadingFallback() {
 function InboxContent() {
   const pathname = usePathname()
   const router = useRouter()
+  const { identity } = useAuth()
   const searchParams = useSearchParams()
   const searchParamsKey = searchParams.toString()
   const requestedTab = searchParams.get('tab')
@@ -351,20 +393,28 @@ function InboxContent() {
   const [filter, setFilter] = useState<QueueFilter>(isQueueFilter(initialView) ? initialView : 'all')
   const [search, setSearch] = useState(searchParams.get('q') ?? '')
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [activityOpen, setActivityOpen] = useState(false)
   const pendingScrollTopRef = useRef(0)
   const tasksScrollTopRef = useRef(0)
   const notificationsScrollTopRef = useRef(0)
   const controlsScrollTopRef = useRef(0)
   const controlsRegionRef = useRef<HTMLElement>(null)
   const workspaces = useGovernedWorkspaces({ enabled: pendingActive })
+  const preferenceScope = workspacePreferenceStorageKey(identity)
+  const [workspacePreference, setWorkspacePreference] = useState<{ scope: string; workspaceId: string | null } | null>(null)
+  const preferredWorkspaceId = workspacePreference?.scope === preferenceScope ? workspacePreference.workspaceId : undefined
   const requestedWorkspaceId = searchParams.get('workspace')
+  const requestedWorkspace = workspaces.data?.find((workspace) => workspace.id === requestedWorkspaceId)
+  const preferredWorkspace = workspaces.data?.find((workspace) => workspace.id === preferredWorkspaceId)
   const workspaceId =
-    workspaces.data?.find((workspace) => workspace.id === requestedWorkspaceId)?.id ??
-    workspaces.data?.[0]?.id ??
-    null
+    requestedWorkspace?.id ??
+    preferredWorkspace?.id ??
+    (preferredWorkspaceId === undefined ? null : workspaces.data?.[0]?.id ?? null)
   const workspaceName =
     workspaces.data?.find((workspace) => workspace.id === workspaceId)?.name ?? 'Workspace'
   const operationsInbox = useOperationsInbox(workspaceId, 'open', { enabled: pendingActive })
+  const proposalsQuery = useQuery({ queryKey: ['operations-inbox', workspaceId, 'change_proposal', 'open'], queryFn: () => listOperationsInbox(workspaceId as string, { type: 'change_proposal', status: 'open', limit: 100 }), enabled: pendingActive && Boolean(workspaceId), refetchInterval: 15_000 })
+  const resolvedProposalsQuery = useQuery({ queryKey: ['operations-inbox', workspaceId, 'change_proposal', 'resolved'], queryFn: () => listOperationsInbox(workspaceId as string, { type: 'change_proposal', status: 'resolved', limit: 30 }), enabled: pendingActive && Boolean(workspaceId), refetchInterval: 15_000 })
   const approvalAvailability = resolveApprovalAvailability({
     workspaceLoading: workspaces.isLoading,
     workspaceError: workspaces.isError,
@@ -405,12 +455,13 @@ function InboxContent() {
     () => operationsInbox.data?.data?.filter((item) => item.type === 'approval') ?? [],
     [operationsInbox.data],
   )
+  const proposals = useMemo(() => proposalsQuery.data?.data ?? [], [proposalsQuery.data])
 
   const rawCounts: Record<QueueFilter, number> = {
-    all: failed.length + pending.length + notifications.length + controls.length + approvals.length,
+    all: failed.length + pending.length + notifications.length + controls.length + approvals.length + proposals.length,
     blocked: failed.length + notifications.filter((log) => /fail|error/i.test(log.status)).length,
     waiting: pending.length + notifications.filter((log) => !/fail|error/i.test(log.status)).length,
-    review: controls.length + approvals.length,
+    review: controls.length + approvals.length + proposals.length,
   }
 
   const queueItems = useMemo(
@@ -421,8 +472,9 @@ function InboxContent() {
         ...notifications.map(notificationToQueueItem),
         ...controls.map(controlToQueueItem),
         ...approvals.map((approval) => approvalToQueueItem(approval, workspaceName)),
+        ...proposals.map((proposal) => proposalToQueueItem(proposal, workspaceName)),
       ]),
-    [approvals, controls, failed, notifications, pending, workspaceName],
+    [approvals, controls, failed, notifications, pending, proposals, workspaceName],
   )
 
   const filteredItems = useMemo(() => {
@@ -456,13 +508,35 @@ function InboxContent() {
 
   const selectWorkspace = useCallback(
     (nextWorkspaceId: string) => {
+      writeWorkspacePreference(identity, nextWorkspaceId)
+      if (preferenceScope) setWorkspacePreference({ scope: preferenceScope, workspaceId: nextWorkspaceId })
       const params = new URLSearchParams(searchParamsKey)
       params.set('workspace', nextWorkspaceId)
       const nextQuery = params.toString()
       router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname, { scroll: false })
     },
-    [pathname, router, searchParamsKey],
+    [identity, pathname, preferenceScope, router, searchParamsKey],
   )
+
+  useEffect(() => {
+    if (!preferenceScope) {
+      setWorkspacePreference(null)
+      return
+    }
+    setWorkspacePreference({ scope: preferenceScope, workspaceId: readWorkspacePreference(identity) })
+  }, [identity, preferenceScope])
+
+  useEffect(() => {
+    if (!pendingActive || !workspaceId) return
+    if (preferredWorkspaceId !== workspaceId) {
+      writeWorkspacePreference(identity, workspaceId)
+      if (preferenceScope) setWorkspacePreference({ scope: preferenceScope, workspaceId })
+    }
+    if (requestedWorkspaceId === workspaceId) return
+    const params = new URLSearchParams(searchParamsKey)
+    params.set('workspace', workspaceId)
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false })
+  }, [identity, pathname, pendingActive, preferenceScope, preferredWorkspaceId, requestedWorkspaceId, router, searchParamsKey, workspaceId])
 
   useEffect(() => {
     if (!pendingActive) return
@@ -795,7 +869,7 @@ function InboxContent() {
                   按严重程度排列，重复信号自动合并
                 </p>
               </div>
-              <Inbox aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
+              <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={() => setActivityOpen((open) => !open)}>{activityOpen ? '返回队列' : '项目动态'}</Button>
             </div>
 
             <ScrollArea
@@ -805,7 +879,7 @@ function InboxContent() {
                 pendingScrollTopRef.current = (event.target as HTMLElement).scrollTop
               }}
             >
-              {filteredItems.length === 0 ? (
+              {activityOpen ? <ProjectActivity items={resolvedProposalsQuery.data?.data ?? []} /> : filteredItems.length === 0 ? (
                 <div className="grid min-h-80 place-items-center px-6 text-center">
                   <div>
                     <span className="mx-auto grid size-10 place-items-center rounded-full bg-muted text-muted-foreground">
@@ -818,35 +892,8 @@ function InboxContent() {
                   </div>
                 </div>
               ) : (
-                <div role="listbox" aria-label="待处理信号">
-                  {SECTION_ORDER.map((section) => {
-                    const sectionItems = filteredItems.filter((item) => item.section === section)
-                    if (sectionItems.length === 0) return null
-                    const meta = SECTION_META[section]
-
-                    return (
-                      <div key={section}>
-                        <div className="sticky top-0 z-[1] flex h-8 items-center gap-2 border-b bg-background/95 px-3 backdrop-blur">
-                          <span aria-hidden="true" className={cn('size-1.5 rounded-full', meta.dot)} />
-                          <span className="text-[11px] font-semibold text-muted-foreground">
-                            {meta.label}
-                          </span>
-                          <span className="font-mono text-[10px] tabular-nums text-muted-foreground">
-                            {sectionItems.reduce((total, item) => total + item.occurrenceCount, 0)}
-                          </span>
-                        </div>
-                        {sectionItems.map((item) => (
-                          <QueueRow
-                            key={item.id}
-                            item={item}
-                            selected={selectedItem?.id === item.id}
-                            onSelect={() => setSelectedId(item.id)}
-                          />
-                        ))}
-                      </div>
-                    )
-                  })}
-
+                <>
+                  <ReorderableQueue items={filteredItems} selectedId={selectedItem?.id ?? null} onSelect={setSelectedId} />
                   {hasMoreSignals ? (
                     <div className="border-t p-3 text-center">
                       <Button
@@ -863,7 +910,7 @@ function InboxContent() {
                       </Button>
                     </div>
                   ) : null}
-                </div>
+                </>
               )}
             </ScrollArea>
           </section>
@@ -875,6 +922,8 @@ function InboxContent() {
             {selectedItem ? (
               selectedItem.approval ? (
                 <ApprovalQueueDetail key={selectedItem.id} item={selectedItem} />
+              ) : selectedItem.proposal ? (
+                <ProposalQueueDetail key={selectedItem.id} item={selectedItem} />
               ) : (
                 <QueueDetail
                   item={selectedItem}

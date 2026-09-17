@@ -56,9 +56,14 @@ import re
 import shutil
 import signal
 import socket
+import struct
 import subprocess
 import uuid
+from collections import OrderedDict
 from contextlib import asynccontextmanager
+from dataclasses import dataclass, field
+from pathlib import Path
+from time import monotonic
 from typing import Any
 from urllib.parse import urlparse
 from urllib.request import proxy_bypass
@@ -89,6 +94,11 @@ from backend.agent_runtimes.registry import (
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s [%(name)s] %(message)s")
 logger = logging.getLogger("agent_server")
+
+if os.name != "nt":
+    import fcntl
+    import pty
+    import termios
 
 _OPENCLI_BIN = os.environ.get("OPENCLI_BIN") or "opencli"
 
@@ -177,7 +187,6 @@ _EDGE_RUNTIME_TASK_CONFIG_KEYS = frozenset(
         "timeout_seconds",
     }
 )
-
 
 
 _AGENT_LABEL = os.environ.get("AGENT_LABEL", socket.gethostname())
@@ -454,6 +463,16 @@ async def _send_ws_agent_event(
         _PENDING_AGENT_EVENT_ACKS.pop(key, None)
 
 
+async def _complete_agent_cleanup(operation):
+    pending = asyncio.ensure_future(operation)
+    while not pending.done():
+        try:
+            await asyncio.shield(pending)
+        except asyncio.CancelledError:
+            continue
+    return pending.result()
+
+
 async def _handle_ws_agent_task(ws, msg: dict) -> None:
     """Execute an agent_task received over the WS channel: run the requested
     runtime adapter, streaming each RuntimeEvent back as an 'agent_event'
@@ -466,6 +485,13 @@ async def _handle_ws_agent_task(ws, msg: dict) -> None:
     request_id = msg.get("request_id", "")
 
     async def _send_result(result: dict) -> None:
+        if msg.get("require_cancel_ack") is True:
+            result = {
+                **result,
+                "task_id": request_id,
+                "cleanup_complete": cleanup_complete,
+            }
+            _cache_agent_task_terminal(request_id, result)
         try:
             await ws.send(
                 json.dumps(
@@ -479,7 +505,9 @@ async def _handle_ws_agent_task(ws, msg: dict) -> None:
         except Exception as exc:
             logger.error("WS: failed to send agent_result for request_id=%s: %s", request_id, exc)
 
+    cleanup_complete = True
     runtime_type = msg.get("runtime", "")
+    terminal_event: dict | None = None
     # Everything below is one outer try/except: get_runtime() lookup, adapter
     # construction of AgentTask, and the invoke() stream are all treated the
     # same way — any exception, of any type, must resolve the center's
@@ -521,35 +549,61 @@ async def _handle_ws_agent_task(ws, msg: dict) -> None:
         config_errors = adapter.validate_config(task.config)
         if config_errors:
             raise RuntimeInvocationError("; ".join(config_errors), error_type="ConfigError")
-        readiness = await adapter.readiness(task.config)
+        cleanup_complete = False
+        readiness_task = asyncio.create_task(adapter.readiness(task.config))
+        try:
+            readiness = await asyncio.shield(readiness_task)
+        except asyncio.CancelledError:
+            readiness_task.cancel()
+            try:
+                await _complete_agent_cleanup(readiness_task)
+            except asyncio.CancelledError:
+                cleanup_complete = True
+            else:
+                cleanup_complete = True
+            raise
+        else:
+            cleanup_complete = True
         if readiness.status != "ready":
             raise RuntimeInvocationError(
                 readiness.reason or f"runtime {runtime_type!r} is not ready",
                 error_type=readiness.reason_code or "RuntimeNotReady",
             )
 
-        terminal_event: dict | None = None
-        async for event in adapter.invoke(task):
-            terminal_event = event
-            try:
-                await _send_ws_agent_event(
-                    ws,
-                    request_id=request_id,
-                    event=event,
-                )
-            except RuntimeInvocationError:
-                raise
-            except Exception as exc:
-                logger.error(
-                    "WS: failed to send agent_event for request_id=%s: %s",
-                    request_id,
-                    exc,
-                )
-                raise RuntimeInvocationError(
-                    "failed to deliver agent event to the control plane",
-                    error_type="AgentEventDeliveryError",
-                ) from exc
-        if terminal_event is None:
+        stream = adapter.invoke(task)
+        cleanup_complete = False
+        iteration_failed = False
+        delivery_failed = False
+        try:
+            async for event in stream:
+                terminal_event = event
+                try:
+                    await _send_ws_agent_event(
+                        ws,
+                        request_id=request_id,
+                        event=event,
+                    )
+                except RuntimeInvocationError:
+                    delivery_failed = True
+                    raise
+                except Exception as exc:
+                    delivery_failed = True
+                    logger.error(
+                        "WS: failed to send agent_event for request_id=%s: %s",
+                        request_id,
+                        exc,
+                    )
+                    raise RuntimeInvocationError(
+                        "failed to deliver agent event to the control plane",
+                        error_type="AgentEventDeliveryError",
+                    ) from exc
+        except Exception:
+            iteration_failed = True
+            raise
+        finally:
+            await _complete_agent_cleanup(stream.aclose())
+            cleanup_complete = not iteration_failed or delivery_failed
+        if terminal_event is None or terminal_event.get("type") not in {"done", "error"}:
             # Contract violation (adapter yielded nothing) — still must resolve
             # the center's pending future rather than hang it until timeout.
             terminal_event = {
@@ -565,6 +619,16 @@ async def _handle_ws_agent_task(ws, msg: dict) -> None:
             runtime_type,
             terminal_event.get("type"),
         )
+    except asyncio.CancelledError:
+        result = terminal_event
+        if result is None or result.get("type") not in {"done", "error"}:
+            result = {
+                "type": "error",
+                "task_id": request_id,
+                "message": "Agent execution stopped after runtime cleanup",
+                "error_type": "CancelledError",
+            }
+        await _complete_agent_cleanup(_send_result(result))
     except RuntimeInvocationError as exc:
         logger.exception(
             "WS agent_task request_id=%s: adapter invocation error: %s",
@@ -592,6 +656,72 @@ async def _handle_ws_agent_task(ws, msg: dict) -> None:
 
 
 _ACTIVE_AGENT_TASKS: dict[str, asyncio.Task[None]] = {}
+_AGENT_TASK_TERMINAL_LIMIT = 1024
+_AGENT_TASK_TERMINAL_TTL_SECONDS = 3600
+_AGENT_TASK_TERMINALS: OrderedDict[str, tuple[float, dict[str, Any]]] = OrderedDict()
+
+
+def _prune_agent_task_terminals(now: float) -> None:
+    while _AGENT_TASK_TERMINALS:
+        expires_at, _result = next(iter(_AGENT_TASK_TERMINALS.values()))
+        if expires_at > now:
+            break
+        _AGENT_TASK_TERMINALS.popitem(last=False)
+
+
+def _cache_agent_task_terminal(task_id: str, result: dict) -> None:
+    if (
+        not isinstance(task_id, str)
+        or not 0 < len(task_id) <= 256
+        or result.get("type") not in {"done", "error"}
+        or result.get("task_id") != task_id
+        or not isinstance(result.get("cleanup_complete"), bool)
+    ):
+        return
+    terminal = {
+        "type": result["type"],
+        "task_id": task_id,
+        "cleanup_complete": result["cleanup_complete"],
+    }
+    error_type = result.get("error_type")
+    if isinstance(error_type, str) and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,127}", error_type):
+        terminal["error_type"] = error_type
+    now = monotonic()
+    _prune_agent_task_terminals(now)
+    _AGENT_TASK_TERMINALS.pop(task_id, None)
+    _AGENT_TASK_TERMINALS[task_id] = (now + _AGENT_TASK_TERMINAL_TTL_SECONDS, terminal)
+    while len(_AGENT_TASK_TERMINALS) > _AGENT_TASK_TERMINAL_LIMIT:
+        _AGENT_TASK_TERMINALS.popitem(last=False)
+
+
+async def _handle_ws_agent_task_status(ws, msg: dict) -> None:
+    request_id = msg.get("request_id")
+    task_id = msg.get("task_id")
+    if any(
+        not isinstance(value, str) or not 0 < len(value) <= 256 for value in (request_id, task_id)
+    ):
+        return
+    _prune_agent_task_terminals(monotonic())
+    cached = _AGENT_TASK_TERMINALS.get(task_id)
+    active = _ACTIVE_AGENT_TASKS.get(task_id)
+    if cached is not None and cached[1]["cleanup_complete"] is True:
+        result = cached[1]
+    elif active is not None and not active.done():
+        result = {"status": "running"}
+    elif cached is not None:
+        result = cached[1]
+    else:
+        result = {"status": "unknown"}
+    await ws.send(
+        json.dumps(
+            {
+                "type": "agent_task_status_result",
+                "request_id": request_id,
+                "task_id": task_id,
+                "result": result,
+            }
+        )
+    )
 
 
 def _forget_ws_agent_task(request_id: str, task: asyncio.Task[None]) -> None:
@@ -601,9 +731,539 @@ def _forget_ws_agent_task(request_id: str, task: asyncio.Task[None]) -> None:
 
 def _start_ws_agent_task(ws, msg: dict) -> None:
     request_id = msg.get("request_id", "")
+    _AGENT_TASK_TERMINALS.pop(request_id, None)
     task = asyncio.create_task(_handle_ws_agent_task(ws, msg))
     _ACTIVE_AGENT_TASKS[request_id] = task
     task.add_done_callback(lambda completed: _forget_ws_agent_task(request_id, completed))
+
+
+_TERMINAL_FRAME_HEADER = struct.Struct("!B36s36sQ")
+_TERMINAL_INPUT = 1
+_TERMINAL_OUTPUT = 2
+_TERMINAL_BROADCAST_ATTACHMENT = "00000000-0000-0000-0000-000000000000"
+_TERMINAL_MAX_PAYLOAD = 64 * 1024
+_TERMINAL_REPLAY_LIMIT = 4 * 1024 * 1024
+_TERMINAL_RETAINED_LIMIT = 32
+_TERMINAL_RUNTIME_ENV = {
+    "codex": ("AGENT_CODEX_ISOLATED_RUNNER", "AGENT_CODEX_ALLOWED_ROOTS"),
+    "omp": ("AGENT_OMP_ISOLATED_RUNNER", "AGENT_OMP_ALLOWED_ROOTS"),
+}
+
+
+@dataclass
+class _NativeTerminalSession:
+    session_id: str
+    runtime: str
+    process: asyncio.subprocess.Process
+    master_fd: int
+    status: str = "active"
+    exit_code: int | None = None
+    cleanup_complete: bool = False
+    controller_id: str | None = None
+    controller_attachment_id: str | None = None
+    attachments: dict[str, str] = field(default_factory=dict)
+    replay: bytearray = field(default_factory=bytearray)
+    sequence: int = 0
+    replay_truncated: bool = False
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    reader_task: asyncio.Task[None] | None = None
+    wait_task: asyncio.Task[None] | None = None
+
+
+_NATIVE_TERMINALS: dict[str, _NativeTerminalSession] = {}
+_NATIVE_TERMINALS_LOCK = asyncio.Lock()
+_STARTING_NATIVE_TERMINALS: set[str] = set()
+_ACTIVE_TERMINAL_WS: Any | None = None
+
+
+def _canonical_terminal_uuid(value: Any) -> str:
+    if not isinstance(value, str):
+        raise ValueError("terminal identifier must be a UUID")
+    parsed = str(uuid.UUID(value))
+    if parsed != value:
+        raise ValueError("terminal identifier must be canonical")
+    return parsed
+
+
+def _terminal_dimensions(msg: dict) -> tuple[int, int]:
+    cols = msg.get("cols")
+    rows = msg.get("rows")
+    if (
+        not isinstance(cols, int)
+        or isinstance(cols, bool)
+        or not isinstance(rows, int)
+        or isinstance(rows, bool)
+        or not 1 <= cols <= 1000
+        or not 1 <= rows <= 1000
+    ):
+        raise ValueError("terminal dimensions are invalid")
+    return cols, rows
+
+
+def _terminal_runner_command(runtime: str, cwd: str, initial_input: str) -> list[str]:
+    if os.name == "nt":
+        raise RuntimeError("native PTY terminals require Linux or WSL")
+    env_names = _TERMINAL_RUNTIME_ENV.get(runtime)
+    if env_names is None:
+        raise ValueError("unsupported terminal runtime")
+    runner_value = os.environ.get(env_names[0], "").strip()
+    runner = Path(runner_value)
+    if not runner_value or not runner.is_absolute() or not runner.is_file():
+        raise RuntimeError("isolated terminal runner is unavailable")
+    try:
+        allowed_values = json.loads(os.environ.get(env_names[1], ""))
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("isolated terminal roots are invalid") from exc
+    if not isinstance(allowed_values, list) or not allowed_values:
+        raise RuntimeError("isolated terminal roots are unavailable")
+    if any(not isinstance(value, str) or not Path(value).is_absolute() for value in allowed_values):
+        raise RuntimeError("isolated terminal roots are invalid")
+    working_directory = Path(cwd).resolve(strict=True)
+    allowed_roots = [Path(value).resolve(strict=True) for value in allowed_values]
+    if not any(
+        working_directory == root or working_directory.is_relative_to(root)
+        for root in allowed_roots
+    ):
+        raise PermissionError("terminal working directory is outside the reserved root")
+    if runtime == "codex":
+        arguments = [
+            "--terminal",
+            "--sandbox",
+            "read-only",
+            "--ask-for-approval",
+            "never",
+            "--cd",
+            str(working_directory),
+            "-c",
+            "features.shell_tool=false",
+            "-c",
+            "features.unified_exec=false",
+            "-c",
+            "features.multi_agent=false",
+            "-c",
+            "features.apps=false",
+            "-c",
+            "features.plugins=false",
+            "-c",
+            "features.skill_search=false",
+            "-c",
+            "features.skill_mcp_dependency_install=false",
+            "-c",
+            'web_search="disabled"',
+        ]
+    else:
+        arguments = [
+            "--terminal",
+            "--no-session",
+            "--no-tools",
+            "--no-lsp",
+            "--no-extensions",
+            "--no-skills",
+            "--no-rules",
+        ]
+    return [str(runner), *arguments, initial_input]
+
+
+def _set_terminal_size(master_fd: int, cols: int, rows: int) -> None:
+    if os.name == "nt":
+        raise RuntimeError("native PTY terminals require Linux or WSL")
+    fcntl.ioctl(master_fd, termios.TIOCSWINSZ, struct.pack("HHHH", rows, cols, 0, 0))
+
+
+async def _write_terminal_fd(master_fd: int, payload: bytes) -> None:
+    offset = 0
+    while offset < len(payload):
+        written = await asyncio.to_thread(os.write, master_fd, payload[offset:])
+        if written <= 0:
+            raise OSError("terminal input write failed")
+        offset += written
+
+
+def _encode_terminal_output(
+    session_id: str, attachment_id: str, sequence: int, payload: bytes
+) -> bytes:
+    return _TERMINAL_FRAME_HEADER.pack(
+        _TERMINAL_OUTPUT,
+        session_id.encode("ascii"),
+        attachment_id.encode("ascii"),
+        sequence,
+    ) + payload
+
+
+async def _send_terminal_event(
+    session_id: str, event: dict[str, Any], *, attachment_id: str | None = None
+) -> None:
+    ws = _ACTIVE_TERMINAL_WS
+    if ws is None:
+        return
+    frame: dict[str, Any] = {"type": "terminal_event", "session_id": session_id, "event": event}
+    if attachment_id is not None:
+        frame["attachment_id"] = attachment_id
+    try:
+        await ws.send(json.dumps(frame))
+    except Exception:
+        return
+
+
+async def _send_terminal_output(
+    session_id: str, attachment_id: str, sequence: int, payload: bytes
+) -> None:
+    ws = _ACTIVE_TERMINAL_WS
+    if ws is None:
+        return
+    try:
+        await ws.send(_encode_terminal_output(session_id, attachment_id, sequence, payload))
+    except Exception:
+        return
+
+
+async def _read_native_terminal(session: _NativeTerminalSession) -> None:
+    try:
+        while True:
+            try:
+                payload = await asyncio.to_thread(os.read, session.master_fd, _TERMINAL_MAX_PAYLOAD)
+            except OSError:
+                break
+            if not payload:
+                break
+            async with session.lock:
+                session.sequence += len(payload)
+                session.replay.extend(payload)
+                if len(session.replay) > _TERMINAL_REPLAY_LIMIT:
+                    overflow = len(session.replay) - _TERMINAL_REPLAY_LIMIT
+                    del session.replay[:overflow]
+                    session.replay_truncated = True
+                should_send = bool(session.attachments)
+                sequence = session.sequence
+            if should_send:
+                await _send_terminal_output(
+                    session.session_id,
+                    _TERMINAL_BROADCAST_ATTACHMENT,
+                    sequence,
+                    payload,
+                )
+    finally:
+        try:
+            os.close(session.master_fd)
+        except OSError:
+            pass
+
+
+_TERMINAL_CLEANUP_POLL_ATTEMPTS = 40
+_TERMINAL_CLEANUP_POLL_INTERVAL_SECONDS = 0.05
+
+
+async def _cleanup_terminal_process_group(session: _NativeTerminalSession) -> bool:
+    if os.name == "nt":
+        return True
+    try:
+        os.killpg(session.process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        return True
+    except OSError:
+        return False
+    for _attempt in range(_TERMINAL_CLEANUP_POLL_ATTEMPTS):
+        try:
+            os.killpg(session.process.pid, 0)
+        except ProcessLookupError:
+            return True
+        except OSError:
+            return False
+        await asyncio.sleep(_TERMINAL_CLEANUP_POLL_INTERVAL_SECONDS)
+    return False
+
+
+async def _wait_native_terminal(session: _NativeTerminalSession) -> None:
+    exit_code = await session.process.wait()
+    cleanup_complete = await _cleanup_terminal_process_group(session)
+    if session.reader_task is not None:
+        await asyncio.gather(session.reader_task, return_exceptions=True)
+    async with session.lock:
+        session.exit_code = exit_code
+        session.cleanup_complete = cleanup_complete
+        session.status = "exited"
+    await _send_terminal_event(
+        session.session_id,
+        {
+            "type": "exit",
+            "status": "exited",
+            "exit_code": exit_code,
+            "cleanup_complete": cleanup_complete,
+        },
+    )
+    async with _NATIVE_TERMINALS_LOCK:
+        completed = [
+            session_id
+            for session_id, candidate in _NATIVE_TERMINALS.items()
+            if candidate.status == "exited"
+        ]
+        for session_id in completed[:-_TERMINAL_RETAINED_LIMIT]:
+            _NATIVE_TERMINALS.pop(session_id, None)
+
+
+def _terminal_status(session: _NativeTerminalSession) -> dict[str, Any]:
+    return {
+        "status": session.status,
+        "exit_code": session.exit_code,
+        "cleanup_complete": session.cleanup_complete,
+    }
+
+
+async def _send_terminal_response(ws: Any, msg: dict, response: dict[str, Any]) -> None:
+    request_id = msg.get("request_id")
+    session_id = msg.get("session_id")
+    if not isinstance(request_id, str) or not isinstance(session_id, str):
+        return
+    await ws.send(
+        json.dumps(
+            {
+                "type": "terminal_response",
+                "request_id": request_id,
+                "session_id": session_id,
+                "response": response,
+            }
+        )
+    )
+
+
+async def _handle_terminal_start(ws: Any, msg: dict) -> None:
+    master_fd: int | None = None
+    slave_fd: int | None = None
+    process: asyncio.subprocess.Process | None = None
+    session_id: str | None = None
+    try:
+        session_id = _canonical_terminal_uuid(msg.get("session_id"))
+        async with _NATIVE_TERMINALS_LOCK:
+            conflict = session_id in _NATIVE_TERMINALS or session_id in _STARTING_NATIVE_TERMINALS
+            if not conflict:
+                _STARTING_NATIVE_TERMINALS.add(session_id)
+        if conflict:
+            await _send_terminal_response(ws, msg, {"status": "conflict"})
+            return
+        runtime = msg.get("runtime")
+        cwd = msg.get("cwd")
+        initial_input = msg.get("initial_input")
+        cols, rows = _terminal_dimensions(msg)
+        if (
+            runtime not in _TERMINAL_RUNTIME_ENV
+            or not isinstance(cwd, str)
+            or not isinstance(initial_input, str)
+            or not initial_input.strip()
+            or len(initial_input) > 20_000
+            or "\x00" in initial_input
+        ):
+            raise ValueError("invalid terminal start request")
+        command = _terminal_runner_command(runtime, cwd, initial_input)
+        master_fd, slave_fd = pty.openpty()
+        _set_terminal_size(master_fd, cols, rows)
+        process = await asyncio.create_subprocess_exec(
+            *command,
+            cwd=cwd,
+            stdin=slave_fd,
+            stdout=slave_fd,
+            stderr=slave_fd,
+            start_new_session=True,
+        )
+        os.close(slave_fd)
+        slave_fd = None
+        session = _NativeTerminalSession(
+            session_id=session_id,
+            runtime=runtime,
+            process=process,
+            master_fd=master_fd,
+        )
+        async with _NATIVE_TERMINALS_LOCK:
+            _NATIVE_TERMINALS[session_id] = session
+        session.reader_task = asyncio.create_task(_read_native_terminal(session))
+        session.wait_task = asyncio.create_task(_wait_native_terminal(session))
+        await _send_terminal_response(ws, msg, _terminal_status(session))
+    except BaseException as exc:
+        logger.warning("Native terminal start failed: %s", type(exc).__name__)
+        if process is not None:
+            await _kill_process_tree(process)
+        if session_id is not None:
+            async with _NATIVE_TERMINALS_LOCK:
+                candidate = _NATIVE_TERMINALS.get(session_id)
+                if candidate is not None and candidate.process is process:
+                    _NATIVE_TERMINALS.pop(session_id, None)
+        for file_descriptor in (master_fd, slave_fd):
+            if file_descriptor is not None:
+                try:
+                    os.close(file_descriptor)
+                except OSError:
+                    pass
+        if isinstance(exc, asyncio.CancelledError):
+            raise
+        await _send_terminal_response(ws, msg, {"status": "failed"})
+    finally:
+        if session_id is not None:
+            async with _NATIVE_TERMINALS_LOCK:
+                _STARTING_NATIVE_TERMINALS.discard(session_id)
+
+
+async def _handle_terminal_attach(ws: Any, msg: dict) -> None:
+    try:
+        session_id = _canonical_terminal_uuid(msg.get("session_id"))
+        attachment_id = _canonical_terminal_uuid(msg.get("attachment_id"))
+        controller_id = _canonical_terminal_uuid(msg.get("controller_id"))
+        session = _NATIVE_TERMINALS.get(session_id)
+        if session is None:
+            await _send_terminal_response(ws, msg, {"status": "unknown"})
+            return
+        async with session.lock:
+            old_attachment = session.controller_attachment_id
+            takeover = msg.get("takeover") is True
+            controls = session.controller_id in {None, controller_id} or takeover
+            session.attachments[attachment_id] = controller_id
+            if controls:
+                session.controller_id = controller_id
+                session.controller_attachment_id = attachment_id
+            status = _terminal_status(session)
+            replay_truncated = session.replay_truncated
+            sequence = session.sequence
+            snapshot = bytes(session.replay)
+        await _send_terminal_response(ws, msg, {**status, "controls": controls})
+        if takeover and old_attachment and old_attachment != attachment_id:
+            await _send_terminal_event(
+                session_id,
+                {"type": "kicked"},
+                attachment_id=old_attachment,
+            )
+        await _send_terminal_event(
+            session_id,
+            {
+                "type": "attached" if controls else "locked",
+                "controls": controls,
+                **status,
+                "replay_truncated": replay_truncated,
+            },
+            attachment_id=attachment_id,
+        )
+        await _send_terminal_event(
+            session_id,
+            {"type": "snapshot_begin", "sequence": sequence},
+            attachment_id=attachment_id,
+        )
+        for offset in range(0, len(snapshot), _TERMINAL_MAX_PAYLOAD):
+            await _send_terminal_output(
+                session_id,
+                attachment_id,
+                sequence,
+                snapshot[offset : offset + _TERMINAL_MAX_PAYLOAD],
+            )
+        await _send_terminal_event(
+            session_id,
+            {"type": "snapshot_end", "sequence": sequence},
+            attachment_id=attachment_id,
+        )
+    except (ValueError, TypeError):
+        await _send_terminal_response(ws, msg, {"status": "failed"})
+
+
+async def _handle_terminal_takeover(ws: Any, msg: dict) -> None:
+    try:
+        session_id = _canonical_terminal_uuid(msg.get("session_id"))
+        attachment_id = _canonical_terminal_uuid(msg.get("attachment_id"))
+        controller_id = _canonical_terminal_uuid(msg.get("controller_id"))
+        session = _NATIVE_TERMINALS.get(session_id)
+        if session is None or session.attachments.get(attachment_id) != controller_id:
+            await _send_terminal_response(ws, msg, {"status": "unknown"})
+            return
+        async with session.lock:
+            old_attachment = session.controller_attachment_id
+            session.controller_id = controller_id
+            session.controller_attachment_id = attachment_id
+            if old_attachment and old_attachment != attachment_id:
+                await _send_terminal_event(
+                    session_id, {"type": "kicked"}, attachment_id=old_attachment
+                )
+            await _send_terminal_event(
+                session_id,
+                {"type": "control_granted", "controls": True},
+                attachment_id=attachment_id,
+            )
+            await _send_terminal_response(
+                ws, msg, {**_terminal_status(session), "controls": True}
+            )
+    except (ValueError, TypeError):
+        await _send_terminal_response(ws, msg, {"status": "failed"})
+
+
+async def _handle_terminal_resize(msg: dict) -> None:
+    try:
+        session = _NATIVE_TERMINALS[_canonical_terminal_uuid(msg.get("session_id"))]
+        attachment_id = _canonical_terminal_uuid(msg.get("attachment_id"))
+        cols, rows = _terminal_dimensions(msg)
+        async with session.lock:
+            if session.controller_attachment_id != attachment_id or session.status != "active":
+                return
+            _set_terminal_size(session.master_fd, cols, rows)
+    except (KeyError, ValueError, OSError, TypeError):
+        return
+
+
+async def _handle_terminal_detach(msg: dict) -> None:
+    try:
+        session = _NATIVE_TERMINALS[_canonical_terminal_uuid(msg.get("session_id"))]
+        attachment_id = _canonical_terminal_uuid(msg.get("attachment_id"))
+    except (KeyError, ValueError, TypeError):
+        return
+    async with session.lock:
+        session.attachments.pop(attachment_id, None)
+        if session.controller_attachment_id == attachment_id:
+            session.controller_attachment_id = None
+
+
+async def _handle_terminal_status(ws: Any, msg: dict) -> None:
+    try:
+        session = _NATIVE_TERMINALS.get(_canonical_terminal_uuid(msg.get("session_id")))
+    except (ValueError, TypeError):
+        session = None
+    await _send_terminal_response(
+        ws, msg, _terminal_status(session) if session is not None else {"status": "unknown"}
+    )
+
+
+async def _handle_terminal_stop(ws: Any, msg: dict) -> None:
+    try:
+        session = _NATIVE_TERMINALS.get(_canonical_terminal_uuid(msg.get("session_id")))
+    except (ValueError, TypeError):
+        session = None
+    if session is None:
+        await _send_terminal_response(ws, msg, {"status": "unknown"})
+        return
+    async with session.lock:
+        if session.status == "active":
+            session.status = "stopping"
+    if session.process.returncode is None:
+        await _kill_process_tree(session.process)
+    if session.wait_task is not None:
+        await asyncio.gather(session.wait_task, return_exceptions=True)
+    await _send_terminal_response(ws, msg, _terminal_status(session))
+
+
+async def _handle_terminal_input(frame: bytes) -> None:
+    if len(frame) <= _TERMINAL_FRAME_HEADER.size:
+        return
+    try:
+        kind, session_raw, attachment_raw, _sequence = _TERMINAL_FRAME_HEADER.unpack_from(frame)
+        session_id = _canonical_terminal_uuid(session_raw.decode("ascii"))
+        attachment_id = _canonical_terminal_uuid(attachment_raw.decode("ascii"))
+    except (ValueError, UnicodeDecodeError, struct.error):
+        return
+    payload = frame[_TERMINAL_FRAME_HEADER.size :]
+    if kind != _TERMINAL_INPUT or not 0 < len(payload) <= _TERMINAL_MAX_PAYLOAD:
+        return
+    session = _NATIVE_TERMINALS.get(session_id)
+    if session is None:
+        return
+    async with session.lock:
+        if session.controller_attachment_id != attachment_id or session.status != "active":
+            return
+        try:
+            await _write_terminal_fd(session.master_fd, payload)
+        except OSError:
+            return
 
 
 async def _register_via_ws(advertise_url: str) -> None:
@@ -612,6 +1272,8 @@ async def _register_via_ws(advertise_url: str) -> None:
     Keeps reconnecting with exponential back-off so transient outages are
     recovered automatically.  The loop exits only when the process shuts down.
     """
+    global _ACTIVE_TERMINAL_WS
+
     import websockets  # requires: pip install websockets
 
     ws_url = (
@@ -666,9 +1328,13 @@ async def _register_via_ws(advertise_url: str) -> None:
                 if ack.get("type") != "registered":
                     raise RuntimeError(f"Unexpected handshake response: {ack}")
                 logger.info("WS registered with center as %s", advertise_url)
+                _ACTIVE_TERMINAL_WS = ws
 
                 # Main receive loop
                 async for raw_msg in ws:
+                    if isinstance(raw_msg, bytes):
+                        await _handle_terminal_input(raw_msg)
+                        continue
                     try:
                         msg = json.loads(raw_msg)
                     except json.JSONDecodeError:
@@ -679,8 +1345,24 @@ async def _register_via_ws(advertise_url: str) -> None:
                         asyncio.create_task(_handle_ws_collect(ws, msg))
                     elif msg_type == "agent_task":
                         _start_ws_agent_task(ws, msg)
+                    elif msg_type == "agent_task_status":
+                        await _handle_ws_agent_task_status(ws, msg)
                     elif msg_type == "agent_event_ack":
                         _resolve_ws_agent_event_ack(msg)
+                    elif msg_type == "terminal_start":
+                        asyncio.create_task(_handle_terminal_start(ws, msg))
+                    elif msg_type == "terminal_attach":
+                        asyncio.create_task(_handle_terminal_attach(ws, msg))
+                    elif msg_type == "terminal_takeover":
+                        asyncio.create_task(_handle_terminal_takeover(ws, msg))
+                    elif msg_type == "terminal_resize":
+                        asyncio.create_task(_handle_terminal_resize(msg))
+                    elif msg_type == "terminal_detach":
+                        asyncio.create_task(_handle_terminal_detach(msg))
+                    elif msg_type == "terminal_status":
+                        asyncio.create_task(_handle_terminal_status(ws, msg))
+                    elif msg_type == "terminal_stop":
+                        asyncio.create_task(_handle_terminal_stop(ws, msg))
                     elif msg_type == "cancel":
                         request_id = msg.get("request_id", "")
                         proc = _ACTIVE_COLLECTS.get(request_id)
@@ -706,6 +1388,11 @@ async def _register_via_ws(advertise_url: str) -> None:
             )
             await asyncio.sleep(wait)
         finally:
+            if _ACTIVE_TERMINAL_WS is locals().get("ws"):
+                _ACTIVE_TERMINAL_WS = None
+                for session in _NATIVE_TERMINALS.values():
+                    session.attachments.clear()
+                    session.controller_attachment_id = None
             for task in tuple(_ACTIVE_AGENT_TASKS.values()):
                 task.cancel()
 
@@ -780,10 +1467,12 @@ async def invoke_runtime_http(
     req: RuntimeInvokeRequest, authorization: str | None = Header(default=None)
 ) -> dict:
     _require_collect_auth(authorization)
-    if req.runtime == "codex":
+    if req.runtime in {"codex", "omp"}:
         raise HTTPException(
             status_code=403,
-            detail="Codex runtime is only available through controller WS dispatch",
+            detail=(
+                f"{req.runtime.title()} runtime is only available through controller WS dispatch"
+            ),
         )
     if req.runtime not in _bundle_declared_runtimes():
         raise HTTPException(

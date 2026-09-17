@@ -406,6 +406,9 @@ const COMMON_PROVIDER_KEYS = new Set([
   'openrouter',
   'newapi',
   'ollama',
+  'lm-studio',
+  'vllm',
+  'localai',
 ])
 
 const COMMON_PROVIDER_CATEGORIES: Record<string, ProviderPresetCategory> = {
@@ -427,6 +430,9 @@ const COMMON_PROVIDER_CATEGORIES: Record<string, ProviderPresetCategory> = {
   openrouter: 'relay',
   newapi: 'local',
   ollama: 'local',
+  'lm-studio': 'local',
+  vllm: 'local',
+  localai: 'local',
 }
 
 export const PROVIDER_PRESETS: ProviderPreset[] = ALL_PROVIDER_PRESETS.filter((preset) =>

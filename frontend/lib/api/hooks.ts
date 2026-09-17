@@ -34,10 +34,23 @@ export function useMyWorkspaces() {
   return useQuery({ queryKey: ["workspaces"], queryFn: api.listMyWorkspaces });
 }
 
-export function useAgentConversations(workspaceId: string | null, enabled = true) {
+export function useAgentConversations(
+  workspaceId: string | null,
+  options: {
+    enabled?: boolean
+    projectId?: string | null
+    workflowId?: string | null
+    runId?: string | null
+  } = {},
+) {
+  const { enabled = true, projectId, workflowId, runId } = options
   return useQuery({
-    queryKey: ['agent-conversations', workspaceId],
-    queryFn: () => api.listAgentConversations(workspaceId as string),
+    queryKey: ['agent-conversations', workspaceId, projectId, workflowId, runId],
+    queryFn: () => api.listAgentConversations(workspaceId as string, 20, {
+      project_id: projectId,
+      workflow_id: workflowId,
+      run_id: runId,
+    }),
     enabled: enabled && !!workspaceId,
   })
 }
@@ -956,6 +969,10 @@ export function useInfiniteTasks(
 }
 
 export function useRecords(params?: {
+  workspace_id?: string;
+  brand_id?: string;
+  product_id?: string;
+  unclassified?: boolean;
   source_id?: string;
   project_id?: string;
   status?: string;
@@ -970,10 +987,13 @@ export function useRecords(params?: {
     | "workflow_id"
     | "workflow_run_id";
   sort_order?: "asc" | "desc";
+  enabled?: boolean;
 }) {
+  const { enabled = true, ...requestParams } = params ?? {}
   return useQuery({
-    queryKey: ["records", params],
-    queryFn: () => api.listRecords(params),
+    queryKey: ["records", requestParams],
+    queryFn: () => api.listRecords(requestParams),
+    enabled,
   });
 }
 

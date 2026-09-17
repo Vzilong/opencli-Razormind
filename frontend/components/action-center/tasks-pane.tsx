@@ -35,6 +35,9 @@ export function TasksPane({ scrollTopRef }: { scrollTopRef: MutableRefObject<num
   const searchParamsKey = searchParams.toString()
   const requestedStatus = searchParams.get('status') ?? ''
   const status = STATUS_FILTERS.some((filter) => filter.key === requestedStatus) ? requestedStatus : ''
+  const workspaceId = searchParams.get('workspace')
+  const launchHref = workspaceId ? `/launch?workspace=${encodeURIComponent(workspaceId)}` : '/launch'
+  const studioHref = workspaceId ? `/studio?workspace=${encodeURIComponent(workspaceId)}` : '/studio'
   const regionRef = useRef<HTMLElement>(null)
   const { data, isLoading, isError, error } = useTasks(status ? { status } : undefined)
   const tasks = data?.data ?? []
@@ -77,7 +80,16 @@ export function TasksPane({ scrollTopRef }: { scrollTopRef: MutableRefObject<num
       ) : isError ? (
         <ErrorState message={(error as Error)?.message} hint={BACKEND_HINT} />
       ) : tasks.length === 0 ? (
-        <EmptyState title="暂无任务" description="触发采集后，任务会显示在此。" />
+        <EmptyState
+          title="暂无任务"
+          description="从研究、项目工作流或自动化发起任务后，运行状态会显示在这里。"
+          action={(
+            <div className="flex flex-wrap justify-center gap-2">
+              <Button size="sm" nativeButton={false} render={<Link href={launchHref} />}>开始研究</Button>
+              <Button size="sm" variant="outline" nativeButton={false} render={<Link href={studioHref} />}>打开项目</Button>
+            </div>
+          )}
+        />
       ) : (
         <Card className="overflow-hidden py-0">
           <Table>

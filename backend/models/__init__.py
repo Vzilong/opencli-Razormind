@@ -3,6 +3,8 @@ from backend.models.agent import AIAgent
 from backend.models.agent_conversation import (
     AgentConversation,
     AgentConversationStatus,
+    AgentTerminalSession,
+    AgentTerminalSessionStatus,
     AgentConversationTurn,
     AgentConversationTurnStatus,
 )
@@ -20,6 +22,15 @@ from backend.models.analysis_snapshot import (
 )
 from backend.models.automation import Automation
 from backend.models.base import TimestampMixin
+from backend.models.brand_knowledge import (
+    Brand,
+    BrandProduct,
+    BrandProjectScope,
+    KnowledgeLibrary,
+    KnowledgePage,
+    KnowledgeRevision,
+    ProjectKnowledgeBinding,
+)
 from backend.models.browser import (
     BrowserBinding,
     BrowserCapabilityInvocation,
@@ -27,6 +38,7 @@ from backend.models.browser import (
     BrowserRuntimeBundle,
     BrowserRuntimeDeployment,
 )
+from backend.models.browser_account import BrowserAccount
 from backend.models.browser_space import (
     BrowserSpace,
     BrowserSpaceEvent,
@@ -149,6 +161,11 @@ from backend.models.workflow import Project, Workflow, WorkflowDraft, WorkflowVe
 from backend.models.workflow_run import WorkflowRun, WorkflowRunEvent
 
 __all__ = [
+    "Brand",
+    "BrandProduct",
+    "BrandProjectScope",
+    "KnowledgePage",
+    "KnowledgeRevision",
     "TimestampMixin",
     "AcquisitionExecution",
     "AcquisitionExecutionStatus",
@@ -167,6 +184,7 @@ __all__ = [
     "AgentConversationTurn",
     "AgentConversationTurnStatus",
     "Automation",
+    "BrowserAccount",
     "BrowserBinding",
     "BrowserCapabilityInvocation",
     "BrowserInstance",
@@ -257,6 +275,8 @@ __all__ = [
     "SourceCursor",
     "SourceMeasurement",
     "StudioWorkspace",
+    "KnowledgeLibrary",
+    "ProjectKnowledgeBinding",
     "StudioProject",
     "StudioWorkflow",
     "StudioWorkflowDraft",

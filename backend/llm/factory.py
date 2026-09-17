@@ -130,13 +130,9 @@ def build_openai_compat_adapter(
 
     ``provider_type`` defaults to ``None`` (→ ``allow_private=False``, the
     full SSRF guard — see ``OpenAICompatAdapter``'s docstring / decision #6):
-    only ``ModelProvider.provider_type == "local"`` should ever get the
-    private-address exemption, and none of chat.py's provider selection,
-    skill_channel's dict config, or the openai processor's config carry that
-    distinction today — passing ``None`` here keeps every one of them fully
-    guarded, exactly as they were (chat.py: unguarded before, now fully
-    guarded — a deliberate SSRF-hole closure, decision #6 — see PR-E report;
-    skill_channel/openai processor: already fully guarded, unchanged).
+    only an explicitly selected local provider gets the private-address
+    exemption. Chat forwards its saved provider type; callers that omit the
+    type retain the full public-address guard.
     """
     return OpenAICompatAdapter(
         _provider_view(

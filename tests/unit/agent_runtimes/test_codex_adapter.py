@@ -6,11 +6,13 @@ import os
 import signal
 import subprocess
 from pathlib import Path
-from unittest.mock import AsyncMock
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from backend.agent_runtimes.base import AgentTask
+from backend.agent_runtimes import codex_adapter
+from backend.agent_runtimes.base import AgentTask, RuntimeInvocationError
 from backend.agent_runtimes.codex_adapter import CodexRuntimeAdapter
 from backend.agent_runtimes.registry import get_runtime, list_runtime_types
 
@@ -378,8 +380,7 @@ async def test_missing_isolated_runner_is_terminal_error(monkeypatch, tmp_path):
             "type": "error",
             "task_id": "task-1",
             "message": (
-                "AGENT_CODEX_ISOLATED_RUNNER is required; "
-                "direct Codex execution is disabled"
+                "AGENT_CODEX_ISOLATED_RUNNER is required; direct Codex execution is disabled"
             ),
             "error_type": "FileNotFoundError",
         }
@@ -558,3 +559,307 @@ async def test_cleanup_targets_process_group_after_leader_has_exited(monkeypatch
 def test_codex_registered():
     assert "codex" in list_runtime_types()
     assert get_runtime("codex").runtime_type == "codex"
+
+
+@pytest.mark.parametrize("phase", ["invoke", "version", "spawn", "invoke_spawn"])
+async def test_repeated_cancellation_drains_owned_cleanup(monkeypatch, tmp_path, phase):
+    adapter = CodexRuntimeAdapter()
+    process = _HangingProcess()
+    entered = asyncio.Event()
+    cleanup_started = asyncio.Event()
+    release_cleanup = asyncio.Event()
+    spawn_release = asyncio.Event()
+
+    async def spawn(*_args, **_kwargs):
+        if phase.endswith("spawn"):
+            entered.set()
+            await spawn_release.wait()
+        return process
+
+    async def communicate():
+        entered.set()
+        await asyncio.Event().wait()
+
+    async def cleanup(_process):
+        cleanup_started.set()
+        await release_cleanup.wait()
+        process.terminate()
+
+    process.communicate = communicate
+    stop = AsyncMock(side_effect=cleanup)
+    monkeypatch.setattr(adapter, "_stop_process", stop)
+    monkeypatch.setattr(codex_adapter.asyncio, "create_subprocess_exec", spawn)
+
+    async def consume():
+        async for event in adapter.invoke(_task(tmp_path)):
+            if event["type"] == "started":
+                entered.set()
+
+    if phase.startswith("invoke"):
+        monkeypatch.setattr(adapter, "_detect_version", AsyncMock(return_value="codex-cli 1.2.3"))
+        pending = asyncio.create_task(consume())
+    else:
+        pending = asyncio.create_task(adapter._detect_version("isolated-runner"))
+    await asyncio.wait_for(entered.wait(), 1)
+    pending.cancel()
+    spawn_release.set()
+    await asyncio.wait_for(cleanup_started.wait(), 1)
+    try:
+        for _attempt in range(3):
+            pending.cancel()
+            await asyncio.sleep(0)
+        assert not pending.done()
+        assert process.returncode is None
+    finally:
+        release_cleanup.set()
+        await asyncio.gather(pending, return_exceptions=True)
+    assert pending.cancelled()
+    assert process.returncode == -15
+    stop.assert_awaited_once_with(process)
+
+
+@pytest.mark.parametrize("cancel_count", [1, 3])
+@pytest.mark.parametrize("cleanup_fails", [False, True])
+async def test_cancel_during_successful_probe_cleanup_never_starts_inference(
+    monkeypatch, tmp_path, cancel_count, cleanup_fails
+):
+    adapter = CodexRuntimeAdapter()
+    process = _CompletedProcess()
+    process.communicate = AsyncMock(return_value=(b"codex-cli 1.2.3\n", b""))
+    cleanup_started = asyncio.Event()
+    release_cleanup = asyncio.Event()
+    cleanup_finished = asyncio.Event()
+    failure = RuntimeInvocationError("process exit unconfirmed", "CleanupUnconfirmed")
+
+    async def cleanup(_process):
+        cleanup_started.set()
+        await release_cleanup.wait()
+        cleanup_finished.set()
+        if cleanup_fails:
+            raise failure
+
+    spawn = AsyncMock(return_value=process)
+    stop = AsyncMock(side_effect=cleanup)
+    monkeypatch.setattr(codex_adapter.asyncio, "create_subprocess_exec", spawn)
+    monkeypatch.setattr(adapter, "_stop_process", stop)
+
+    async def consume():
+        return [event async for event in adapter.invoke(_task(tmp_path))]
+
+    pending = asyncio.create_task(consume())
+    await asyncio.wait_for(cleanup_started.wait(), 1)
+    assert pending.cancelling() == 0
+    try:
+        for _attempt in range(cancel_count):
+            pending.cancel()
+            await asyncio.sleep(0)
+        assert not pending.done()
+        assert not cleanup_finished.is_set()
+    finally:
+        release_cleanup.set()
+        outcomes = await asyncio.gather(pending, return_exceptions=True)
+    assert cleanup_finished.is_set()
+    if cleanup_fails:
+        assert outcomes == [failure]
+        assert not pending.cancelled()
+    else:
+        assert isinstance(outcomes[0], asyncio.CancelledError)
+        assert pending.cancelled()
+    spawn.assert_awaited_once()
+    assert spawn.call_args.args[-1] == "--version"
+    stop.assert_awaited_once_with(process)
+
+
+async def test_stderr_is_drained_concurrently_in_bounded_chunks(monkeypatch, tmp_path):
+    adapter = CodexRuntimeAdapter()
+    process = _HangingProcess()
+
+    class FloodedStderr:
+        reads = 0
+
+        async def read(self, size=-1):
+            assert 0 < size <= 4096
+            self.reads += 1
+            if self.reads <= 100:
+                return b"discarded-diagnostic".ljust(size, b"x")
+            if self.reads == 101:
+                return b"final diagnostic"
+            process.returncode = 17
+            process.stdout.feed_eof()
+            return b""
+
+    process.stderr = FloodedStderr()
+    monkeypatch.setattr(adapter, "_stop_process", AsyncMock())
+    monkeypatch.setattr(
+        codex_adapter.asyncio, "create_subprocess_exec", AsyncMock(return_value=process)
+    )
+    monkeypatch.setattr(adapter, "_detect_version", AsyncMock(return_value="codex-cli 1.2.3"))
+    events = [event async for event in adapter.invoke(_task(tmp_path, timeout_seconds=0.02))]
+
+    assert events[-1]["error_type"] == "ProcessExitError"
+    assert events[-1]["message"].endswith("final diagnostic")
+    assert "discarded-diagnostic" not in events[-1]["message"]
+    assert len(events[-1]["message"]) <= codex_adapter._STDERR_TAIL_BYTES + 40
+    assert process.stderr.reads == 102
+
+
+async def test_stderr_drain_is_closed_when_cancelled(monkeypatch, tmp_path):
+    adapter = CodexRuntimeAdapter()
+    process = _HangingProcess()
+    started = asyncio.Event()
+    drained = asyncio.Event()
+
+    class PendingStderr:
+        async def read(self, size=-1):
+            started.set()
+            try:
+                await asyncio.Event().wait()
+            finally:
+                drained.set()
+
+    process.stderr = PendingStderr()
+    monkeypatch.setattr(
+        codex_adapter.asyncio, "create_subprocess_exec", AsyncMock(return_value=process)
+    )
+    monkeypatch.setattr(adapter, "_detect_version", AsyncMock(return_value="codex-cli 1.2.3"))
+    monkeypatch.setattr(adapter, "_stop_process", AsyncMock())
+
+    async def consume():
+        return [event async for event in adapter.invoke(_task(tmp_path))]
+
+    pending = asyncio.create_task(consume())
+    try:
+        await asyncio.wait_for(started.wait(), 1)
+    finally:
+        pending.cancel()
+        await asyncio.gather(pending, return_exceptions=True)
+    assert drained.is_set()
+    assert pending.cancelled()
+
+
+async def test_stderr_eof_wait_is_within_run_timeout(monkeypatch, tmp_path):
+    adapter = CodexRuntimeAdapter()
+    process = _CompletedProcess()
+    process.stderr = asyncio.StreamReader()
+    monkeypatch.setattr(
+        codex_adapter.asyncio, "create_subprocess_exec", AsyncMock(return_value=process)
+    )
+    monkeypatch.setattr(adapter, "_detect_version", AsyncMock(return_value="codex-cli 1.2.3"))
+    events = [event async for event in adapter.invoke(_task(tmp_path, timeout_seconds=0.01))]
+    assert events[-1]["error_type"] == "TimeoutError"
+
+
+async def test_cleanup_rejects_unconfirmed_process_group_exit(monkeypatch):
+    adapter = CodexRuntimeAdapter()
+    process = SimpleNamespace(pid=4242, returncode=0)
+    kill_group = Mock()
+    monkeypatch.setattr(codex_adapter, "os", SimpleNamespace(name="posix", killpg=kill_group))
+    monkeypatch.setattr(codex_adapter, "signal", SimpleNamespace(SIGTERM=15, SIGKILL=9))
+    wait_exit = AsyncMock(return_value=False)
+    monkeypatch.setattr(adapter, "_wait_for_process_group_exit", wait_exit)
+
+    with pytest.raises(RuntimeInvocationError) as raised:
+        await adapter._stop_process(process)
+
+    assert raised.value.error_type == "CleanupUnconfirmed"
+    assert wait_exit.await_count == 2
+    assert kill_group.call_args_list[-1].args == (4242, 9)
+
+
+async def test_cleanup_rejects_failed_windows_tree_termination(monkeypatch):
+    adapter = CodexRuntimeAdapter()
+    process = SimpleNamespace(pid=4242, returncode=0)
+    monkeypatch.setattr(codex_adapter, "os", SimpleNamespace(name="nt"))
+    terminate = Mock(return_value=SimpleNamespace(returncode=128))
+    monkeypatch.setattr(codex_adapter.subprocess, "run", terminate)
+
+    with pytest.raises(RuntimeInvocationError) as raised:
+        await adapter._stop_process(process)
+
+    assert raised.value.error_type == "CleanupUnconfirmed"
+    assert terminate.call_args.args[0] == ["taskkill", "/PID", "4242", "/T", "/F"]
+
+
+def test_sync_probe_cleanup_rejects_unconfirmed_process_group_exit(monkeypatch):
+    process = SimpleNamespace(pid=4242, returncode=0, poll=Mock(return_value=0))
+    kill_group = Mock()
+    monkeypatch.setattr(codex_adapter, "os", SimpleNamespace(name="posix", killpg=kill_group))
+    monkeypatch.setattr(codex_adapter, "signal", SimpleNamespace(SIGTERM=15, SIGKILL=9))
+    monkeypatch.setattr(codex_adapter, "_KILL_GRACE_SECONDS", 0)
+
+    with pytest.raises(RuntimeInvocationError) as raised:
+        CodexRuntimeAdapter._stop_process_sync(process)
+
+    assert raised.value.error_type == "CleanupUnconfirmed"
+    assert [call.args for call in kill_group.call_args_list] == [
+        (4242, 15),
+        (4242, 0),
+        (4242, 9),
+        (4242, 0),
+    ]
+    assert process.poll.call_count == 2
+
+
+async def test_cleanup_rejects_leader_that_never_exits(monkeypatch):
+    process = SimpleNamespace(
+        returncode=None, terminate=Mock(), kill=Mock(), wait=AsyncMock(side_effect=TimeoutError)
+    )
+    with pytest.raises(RuntimeInvocationError) as raised:
+        await CodexRuntimeAdapter()._stop_process(process)
+
+    assert raised.value.error_type == "CleanupUnconfirmed"
+    process.terminate.assert_called_once()
+    process.kill.assert_called_once()
+    assert process.wait.await_count == 2
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        RuntimeInvocationError("process still running", "CleanupUnconfirmed"),
+        subprocess.TimeoutExpired("taskkill", 1),
+    ],
+)
+def test_unconfirmed_probe_cleanup_never_advertises_runtime(monkeypatch, error):
+    monkeypatch.setattr(CodexRuntimeAdapter, "_probe_runner", Mock(side_effect=error))
+    assert CodexRuntimeAdapter.is_available() is False
+
+
+async def test_operator_chat_disables_native_tools_and_passes_prompt_only_on_stdin(
+    monkeypatch, tmp_path
+):
+    adapter = CodexRuntimeAdapter()
+    process = _CompletedProcess()
+    process.stdin = SimpleNamespace(write=Mock(), drain=AsyncMock(), close=Mock())
+    spawn = AsyncMock(return_value=process)
+    monkeypatch.setattr(codex_adapter.asyncio, "create_subprocess_exec", spawn)
+    monkeypatch.setattr(adapter, "_detect_version", AsyncMock(return_value="codex-cli 1.2.3"))
+    task = _task(tmp_path)
+    task.workflow = "operator_chat"
+    task.input = {"message": "private conversation content"}
+
+    events = [event async for event in adapter.invoke(task)]
+
+    argv = spawn.call_args.args
+    assert argv[-1] == "-"
+    assert not any("private conversation content" in argument for argument in argv)
+    assert not any(task.instructions in argument for argument in argv)
+    for feature in (
+        "shell_tool",
+        "unified_exec",
+        "multi_agent",
+        "apps",
+        "plugins",
+        "skill_search",
+        "skill_mcp_dependency_install",
+    ):
+        index = argv.index(f"features.{feature}=false")
+        assert argv[index - 1] == "-c"
+    assert argv[argv.index('web_search="disabled"') - 1] == "-c"
+    assert "--ignore-user-config" in argv
+    assert "--ephemeral" in argv
+    assert spawn.call_args.kwargs["stdin"] == asyncio.subprocess.PIPE
+    process.stdin.write.assert_called_once_with(adapter._compose_prompt(task).encode())
+    process.stdin.drain.assert_awaited_once()
+    process.stdin.close.assert_called_once()
+    assert events[-1]["type"] == "done"

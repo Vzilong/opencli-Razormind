@@ -14,12 +14,12 @@ from urllib.parse import urlsplit
 
 import httpx
 from mcp.server import MCPServer
+from mcp.server.mcpserver import Context
 from mcp.server.transport_security import TransportSecuritySettings
 from mcp_types import ToolAnnotations
 
 from backend.config import get_settings
 
-API_BASE_URL = os.environ.get("OPENCLI_ADMIN_API_URL", "http://localhost:8031").rstrip("/")
 MCP_PROTOCOL_VERSION = "2026-07-28"
 
 READ_ONLY_TOOL = ToolAnnotations(
@@ -42,9 +42,48 @@ IDEMPOTENT_WRITE_TOOL = ToolAnnotations(
 )
 
 
-def _auth_headers() -> dict[str, str]:
-    token = get_settings().api_auth_token
-    return {"Authorization": f"Bearer {token}"} if token else {}
+def _api_base_url() -> str:
+    settings = get_settings()
+    value = getattr(
+        settings,
+        "opencli_admin_api_url",
+        os.environ.get("OPENCLI_ADMIN_API_URL", "http://localhost:8031"),
+    )
+    return str(value).rstrip("/")
+
+
+def _auth_headers(context: Context | None = None) -> dict[str, str]:
+    """Separate fleet transport access from the downstream caller identity."""
+
+    settings = get_settings()
+    headers: dict[str, str] = {}
+    fleet_token = settings.api_auth_token.strip()
+    if fleet_token:
+        headers["X-API-Token"] = fleet_token
+
+    caller_token = ""
+    request_headers = context.headers if context is not None else None
+    if request_headers is not None:
+        scheme, _, credential = request_headers.get("authorization", "").partition(" ")
+        if scheme.lower() == "bearer" and credential and credential != fleet_token:
+            headers["Authorization"] = f"Bearer {credential}"
+    else:
+        caller_token = str(
+            getattr(
+                settings,
+                "opencli_mcp_caller_token",
+                os.environ.get("OPENCLI_MCP_CALLER_TOKEN", ""),
+            )
+        ).strip()
+        if caller_token:
+            headers["Authorization"] = f"Bearer {caller_token}"
+    return headers
+
+
+def _context_arg(context: Context | None) -> dict[str, Context]:
+    """Keep direct-call compatibility while forwarding real HTTP MCP context."""
+
+    return {"context": context} if context is not None else {}
 
 
 def _csv_env(name: str) -> list[str]:
@@ -98,14 +137,21 @@ mcp = MCPServer(
 )
 
 
-async def _request(method: str, path: str, **kwargs: Any) -> dict[str, Any]:
+async def _request(
+    method: str,
+    path: str,
+    *,
+    context: Context | None = None,
+    **kwargs: Any,
+) -> dict[str, Any]:
     """Call the REST API and normalize HTTP/network failures for tool callers."""
 
     try:
+        api_base_url = _api_base_url()
         async with httpx.AsyncClient(
-            base_url=API_BASE_URL,
+            base_url=api_base_url,
             timeout=30.0,
-            headers=_auth_headers(),
+            headers=_auth_headers(context),
         ) as client:
             response = await client.request(method, path, **kwargs)
             try:
@@ -122,7 +168,7 @@ async def _request(method: str, path: str, **kwargs: Any) -> dict[str, Any]:
     except httpx.HTTPError as exc:
         return {
             "success": False,
-            "error": f"request to {API_BASE_URL}{path} failed: {exc}",
+            "error": f"request to {_api_base_url()}{path} failed: {exc}",
         }
 
 
@@ -132,6 +178,7 @@ async def list_sources(
     channel_type: str | None = None,
     page: int = 1,
     limit: int = 20,
+    ctx: Context | None = None,
 ) -> dict[str, Any]:
     """List configured data sources, optionally filtered by state or channel type."""
 
@@ -140,7 +187,7 @@ async def list_sources(
         params["enabled"] = enabled
     if channel_type is not None:
         params["channel_type"] = channel_type
-    return await _request("GET", "/api/v1/sources", params=params)
+    return await _request("GET", "/api/v1/sources", **_context_arg(ctx), params=params)
 
 
 @mcp.tool(annotations=WRITE_TOOL, structured_output=True)
@@ -151,12 +198,14 @@ async def create_source(
     description: str | None = None,
     enabled: bool = True,
     tags: list[str] | None = None,
+    ctx: Context | None = None,
 ) -> dict[str, Any]:
     """Create an OpenCLI data source."""
 
     return await _request(
         "POST",
         "/api/v1/sources",
+        **_context_arg(ctx),
         json={
             "name": name,
             "channel_type": channel_type,
@@ -169,17 +218,26 @@ async def create_source(
 
 
 @mcp.tool(annotations=READ_ONLY_TOOL, structured_output=True)
-async def test_source(source_id: str) -> dict[str, Any]:
+async def test_source(source_id: str, ctx: Context | None = None) -> dict[str, Any]:
     """Dry-run source connectivity without storing collected records."""
 
-    return await _request("POST", f"/api/v1/sources/{source_id}/test")
+    return await _request(
+        "POST",
+        f"/api/v1/sources/{source_id}/test",
+        **_context_arg(ctx),
+    )
 
 
 @mcp.tool(annotations=READ_ONLY_TOOL, structured_output=True)
-async def discover_feed(url: str) -> dict[str, Any]:
+async def discover_feed(url: str, ctx: Context | None = None) -> dict[str, Any]:
     """Find RSS/Atom feed candidates for a website."""
 
-    return await _request("POST", "/api/v1/sources/discover-feed", json={"url": url})
+    return await _request(
+        "POST",
+        "/api/v1/sources/discover-feed",
+        **_context_arg(ctx),
+        json={"url": url},
+    )
 
 
 @mcp.tool(annotations=WRITE_TOOL, structured_output=True)
@@ -188,12 +246,14 @@ async def trigger_task(
     parameters: dict[str, Any] | None = None,
     priority: int = 5,
     agent_id: str | None = None,
+    ctx: Context | None = None,
 ) -> dict[str, Any]:
     """Dispatch a collection run and return its task identifier."""
 
     return await _request(
         "POST",
         "/api/v1/tasks/trigger",
+        **_context_arg(ctx),
         json={
             "source_id": source_id,
             "parameters": parameters or {},
@@ -204,10 +264,10 @@ async def trigger_task(
 
 
 @mcp.tool(annotations=READ_ONLY_TOOL, structured_output=True)
-async def get_task(task_id: str) -> dict[str, Any]:
+async def get_task(task_id: str, ctx: Context | None = None) -> dict[str, Any]:
     """Read a collection task's durable status."""
 
-    return await _request("GET", f"/api/v1/tasks/{task_id}")
+    return await _request("GET", f"/api/v1/tasks/{task_id}", **_context_arg(ctx))
 
 
 @mcp.tool(annotations=READ_ONLY_TOOL, structured_output=True)
@@ -218,6 +278,7 @@ async def list_records(
     search: str | None = None,
     page: int = 1,
     limit: int = 20,
+    ctx: Context | None = None,
 ) -> dict[str, Any]:
     """Query collected records."""
 
@@ -230,24 +291,164 @@ async def list_records(
         params["status"] = status
     if search is not None:
         params["search"] = search
-    return await _request("GET", "/api/v1/records", params=params)
+    return await _request("GET", "/api/v1/records", **_context_arg(ctx), params=params)
 
 
 @mcp.tool(annotations=READ_ONLY_TOOL, structured_output=True)
-async def list_project_workflows(workspace_id: str, project_id: str) -> dict[str, Any]:
+async def query_project_records(
+    workspace_id: str,
+    project_id: str,
+    q: str | None = None,
+    limit: int = 20,
+    ctx: Context | None = None,
+) -> dict[str, Any]:
+    """Read existing normalized records authorized for one exact project."""
+
+    params: dict[str, Any] = {"limit": limit}
+    if q is not None:
+        params["q"] = q
+    return await _request(
+        "GET",
+        f"/api/v1/workspaces/{workspace_id}/projects/{project_id}/agent-data/records",
+        **_context_arg(ctx),
+        params=params,
+    )
+
+
+@mcp.tool(annotations=READ_ONLY_TOOL, structured_output=True)
+async def query_project_context(
+    workspace_id: str,
+    project_id: str,
+    q: str,
+    limit: int = 8,
+    ctx: Context | None = None,
+) -> dict[str, Any]:
+    """Retrieve cited records, knowledge, and durable research without starting work."""
+
+    return await _request(
+        "GET",
+        f"/api/v1/workspaces/{workspace_id}/projects/{project_id}/agent-data/context",
+        **_context_arg(ctx),
+        params={"q": q, "limit": limit},
+    )
+
+
+@mcp.tool(annotations=READ_ONLY_TOOL, structured_output=True)
+async def get_project_data_capabilities(
+    workspace_id: str,
+    project_id: str,
+    ctx: Context | None = None,
+) -> dict[str, Any]:
+    """Read truthful downstream data and research contract availability."""
+
+    return await _request(
+        "GET",
+        f"/api/v1/workspaces/{workspace_id}/projects/{project_id}/agent-data/capabilities",
+        **_context_arg(ctx),
+    )
+
+
+@mcp.tool(annotations=READ_ONLY_TOOL, structured_output=True)
+async def get_project_research_readiness(
+    workspace_id: str,
+    project_id: str,
+    ctx: Context | None = None,
+) -> dict[str, Any]:
+    """Inspect research dependency readiness for an authorized project."""
+
+    return await _request(
+        "GET",
+        f"/api/v1/workspaces/{workspace_id}/projects/{project_id}/research/readiness",
+        **_context_arg(ctx),
+    )
+
+
+@mcp.tool(annotations=IDEMPOTENT_WRITE_TOOL, structured_output=True)
+async def start_project_research(
+    workspace_id: str,
+    project_id: str,
+    template_id: str,
+    question: str,
+    request_id: str,
+    seed_urls: list[str] | None = None,
+    max_sources: int = 5,
+    ctx: Context | None = None,
+) -> dict[str, Any]:
+    """Start research through the shared REST engine using a stable request ID."""
+
+    return await _request(
+        "POST",
+        f"/api/v1/workspaces/{workspace_id}/projects/{project_id}/research/runs",
+        **_context_arg(ctx),
+        json={
+            "template_id": template_id,
+            "question": question,
+            "seed_urls": seed_urls or [],
+            "max_sources": max_sources,
+            "request_id": request_id,
+        },
+    )
+
+
+@mcp.tool(annotations=READ_ONLY_TOOL, structured_output=True)
+async def list_project_research_runs(
+    workspace_id: str,
+    project_id: str,
+    limit: int = 20,
+    ctx: Context | None = None,
+) -> dict[str, Any]:
+    """List durable research runs for one authorized project."""
+
+    return await _request(
+        "GET",
+        f"/api/v1/workspaces/{workspace_id}/projects/{project_id}/research/runs",
+        **_context_arg(ctx),
+        params={"limit": limit},
+    )
+
+
+@mcp.tool(annotations=READ_ONLY_TOOL, structured_output=True)
+async def get_project_research_run(
+    workspace_id: str,
+    project_id: str,
+    run_id: str,
+    ctx: Context | None = None,
+) -> dict[str, Any]:
+    """Read one durable research run after project authorization."""
+
+    return await _request(
+        "GET",
+        f"/api/v1/workspaces/{workspace_id}/projects/{project_id}/research/runs/{run_id}",
+        **_context_arg(ctx),
+    )
+
+
+@mcp.tool(annotations=READ_ONLY_TOOL, structured_output=True)
+async def list_project_workflows(
+    workspace_id: str,
+    project_id: str,
+    ctx: Context | None = None,
+) -> dict[str, Any]:
     """List a project's workflows and current published versions."""
 
     return await _request(
         "GET",
         f"/api/v1/workspaces/{workspace_id}/projects/{project_id}/workflows",
+        **_context_arg(ctx),
     )
 
 
 @mcp.tool(annotations=READ_ONLY_TOOL, structured_output=True)
-async def list_workflow_node_capabilities() -> dict[str, Any]:
+async def list_workflow_node_capabilities(
+    ctx: Context | None = None,
+) -> dict[str, Any]:
     """List typed Workflow nodes, runtime bindings, readiness, and input/output contracts."""
 
-    return await _request("GET", "/api/v1/workflows/capabilities")
+    return await _request(
+        "GET",
+        "/api/v1/workflows/capabilities",
+        **_context_arg(ctx),
+    )
 
 
 def _new_agent_workflow_project(intent: str, name: str, locale: str) -> dict[str, Any]:
@@ -290,6 +491,7 @@ async def draft_workflow_from_intent(
     name: str = "Agent workflow draft",
     locale: str = "zh-CN",
     project: dict[str, Any] | None = None,
+    ctx: Context | None = None,
 ) -> dict[str, Any]:
     """Arrange existing nodes into a review-only draft; never persist, publish, or execute it."""
 
@@ -297,6 +499,7 @@ async def draft_workflow_from_intent(
     return await _request(
         "POST",
         "/api/v1/workflows/demand-draft",
+        **_context_arg(ctx),
         json={"project": base_project, "text": intent, "locale": locale},
     )
 
@@ -305,21 +508,31 @@ async def draft_workflow_from_intent(
 async def preview_workflow_node_patch(
     project: dict[str, Any],
     operations: list[dict[str, Any]],
+    ctx: Context | None = None,
 ) -> dict[str, Any]:
     """Preview explicit add/connect/update node operations without persisting the graph."""
 
     return await _request(
         "POST",
         "/api/v1/workflows/patch",
+        **_context_arg(ctx),
         json={"project": project, "operations": operations},
     )
 
 
 @mcp.tool(annotations=READ_ONLY_TOOL, structured_output=True)
-async def compile_workflow_draft(project: dict[str, Any]) -> dict[str, Any]:
+async def compile_workflow_draft(
+    project: dict[str, Any],
+    ctx: Context | None = None,
+) -> dict[str, Any]:
     """Validate and compile a draft graph in memory without dispatching or persisting work."""
 
-    return await _request("POST", "/api/v1/workflows/compile", json={"project": project})
+    return await _request(
+        "POST",
+        "/api/v1/workflows/compile",
+        **_context_arg(ctx),
+        json={"project": project},
+    )
 
 
 @mcp.tool(annotations=IDEMPOTENT_WRITE_TOOL, structured_output=True)
@@ -330,24 +543,31 @@ async def run_published_workflow(
     inputs: dict[str, Any],
     idempotency_key: str,
     user: str = "mcp-client",
+    ctx: Context | None = None,
 ) -> dict[str, Any]:
     """Run the current immutable published version with an explicit retry key."""
 
     return await _request(
         "POST",
         (f"/api/v1/workspaces/{workspace_id}/projects/{project_id}/workflows/{workflow_id}/runs"),
+        **_context_arg(ctx),
         headers={"Idempotency-Key": idempotency_key},
         json={"inputs": inputs, "response_mode": "async", "user": user},
     )
 
 
 @mcp.tool(annotations=READ_ONLY_TOOL, structured_output=True)
-async def get_project_runtime_summary(workspace_id: str, project_id: str) -> dict[str, Any]:
+async def get_project_runtime_summary(
+    workspace_id: str,
+    project_id: str,
+    ctx: Context | None = None,
+) -> dict[str, Any]:
     """Read project-level run counts and recent activity."""
 
     return await _request(
         "GET",
         f"/api/v1/workspaces/{workspace_id}/projects/{project_id}/runtime-summary",
+        **_context_arg(ctx),
     )
 
 
@@ -359,6 +579,7 @@ async def list_project_runtime_logs(
     search: str | None = None,
     page: int = 1,
     limit: int = 20,
+    ctx: Context | None = None,
 ) -> dict[str, Any]:
     """List durable project workflow runs."""
 
@@ -370,6 +591,7 @@ async def list_project_runtime_logs(
     return await _request(
         "GET",
         f"/api/v1/workspaces/{workspace_id}/projects/{project_id}/runtime-logs",
+        **_context_arg(ctx),
         params=params,
     )
 
@@ -382,6 +604,7 @@ async def get_project_runtime_trace(
     run_id: str,
     after_sequence: int | None = None,
     limit: int | None = None,
+    ctx: Context | None = None,
 ) -> dict[str, Any]:
     """Read one project-owned run's projection, checkpoint, and events."""
 
@@ -396,6 +619,7 @@ async def get_project_runtime_trace(
             f"/api/v1/workspaces/{workspace_id}/projects/{project_id}"
             f"/workflows/{workflow_id}/runs/{run_id}/trace"
         ),
+        **_context_arg(ctx),
         params=params,
     )
 

@@ -413,9 +413,9 @@ async def guarded_async_client(
     ``is_ip_blocked`` defense-in-depth re-check, pinned to that single IP.
 
     ``allow_private`` (default ``False``): see :func:`is_ip_blocked` — passed
-    through to both the initial validation and the pinned transport's
-    connect-time re-check. Only ``backend.llm.openai_compat`` passes ``True``,
-    and only for ``ModelProvider.provider_type == "local"``.
+    through to both validation and the transport's connect-time re-check.
+    Local model providers and an explicitly opted-in, operator-configured
+    SearXNG service may use it. User/model-supplied source URLs must not.
 
     ``client_kwargs`` are forwarded to ``httpx.AsyncClient`` verbatim (timeout,
     headers, follow_redirects, etc) except ``transport``, which this function

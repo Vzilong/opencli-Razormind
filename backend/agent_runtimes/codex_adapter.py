@@ -22,7 +22,7 @@ import re
 import signal
 import subprocess
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable
 from pathlib import Path
 from typing import Any
 
@@ -30,6 +30,7 @@ from backend.agent_runtimes.base import (
     AgentTask,
     RuntimeAdapter,
     RuntimeCapabilities,
+    RuntimeInvocationError,
     RuntimeReadiness,
     event_done,
     event_error,
@@ -79,6 +80,21 @@ _SHELL_ENVIRONMENT_POLICY = (
 _VERSION_RE = re.compile(r"\bcodex(?:[- ]cli)?(?:\s+version)?\s+([0-9][0-9A-Za-z.+-]*)\b", re.I)
 
 
+async def _finish_cleanup(operation: Awaitable[Any]) -> Any:
+    pending = asyncio.ensure_future(operation)
+    cancellation: asyncio.CancelledError | None = None
+    while not pending.done():
+        try:
+            await asyncio.shield(pending)
+        except asyncio.CancelledError as exc:
+            if cancellation is None:
+                cancellation = exc
+    result = pending.result()
+    if cancellation is not None:
+        raise cancellation
+    return result
+
+
 @register_runtime
 class CodexRuntimeAdapter(RuntimeAdapter):
     """Run ``codex exec --json`` on a registered local Agent node."""
@@ -90,6 +106,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         resume_by_id=False,
         checkpoint="none",
         concurrent_sessions=True,
+        features=frozenset({"operator_chat"}),
     )
 
     def validate_config(self, config: dict[str, Any]) -> list[str]:
@@ -130,9 +147,9 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         try:
             runner = cls._configured_runner()
             cls._configured_roots()
-        except ValueError:
+            return cls._probe_runner(runner)
+        except (ValueError, OSError, subprocess.SubprocessError, RuntimeInvocationError):
             return False
-        return cls._probe_runner(runner)
 
     async def readiness(self, config: dict[str, Any] | None = None) -> RuntimeReadiness:
         config = config or {}
@@ -197,11 +214,13 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         )
 
     @staticmethod
-    def _compose_argv(binary: str, cwd: Path, prompt: str = "") -> list[str]:
+    def _compose_argv(
+        binary: str, cwd: Path, prompt: str = "", *, chat_only: bool = False
+    ) -> list[str]:
         # Operations Agent profiles that may reach this adapter are advisory.
         # Workbench consumes the returned patch and applies it through its own
         # guarded pipeline, so the runtime itself never needs write access.
-        return [
+        argv = [
             binary,
             "exec",
             "--json",
@@ -219,8 +238,30 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             "read-only",
             "--cd",
             str(cwd),
-            prompt,
         ]
+        if chat_only:
+            argv.extend(
+                [
+                    "--skip-git-repo-check",
+                    "-c",
+                    "features.shell_tool=false",
+                    "-c",
+                    "features.unified_exec=false",
+                    "-c",
+                    "features.multi_agent=false",
+                    "-c",
+                    "features.apps=false",
+                    "-c",
+                    "features.plugins=false",
+                    "-c",
+                    "features.skill_search=false",
+                    "-c",
+                    "features.skill_mcp_dependency_install=false",
+                    "-c",
+                    'web_search="disabled"',
+                ]
+            )
+        return [*argv, "-" if chat_only else prompt]
 
     def _compose_prompt(self, task: AgentTask) -> str:
         payload = task.input if isinstance(task.input, dict) else {}
@@ -258,12 +299,14 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             resolved_binary,
             timeout_seconds=min(timeout_seconds, _VERSION_TIMEOUT_SECONDS),
         )
-        argv = self._compose_argv(resolved_binary, cwd, self._compose_prompt(task))
+        chat_only = task.workflow == "operator_chat"
+        prompt = self._compose_prompt(task)
+        argv = self._compose_argv(resolved_binary, cwd, prompt, chat_only=chat_only)
 
         try:
-            proc = await asyncio.create_subprocess_exec(
+            proc = await self._spawn_owned(
                 *argv,
-                stdin=asyncio.subprocess.DEVNULL,
+                stdin=asyncio.subprocess.PIPE if chat_only else asyncio.subprocess.DEVNULL,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=str(cwd),
@@ -277,12 +320,53 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             yield event_error(task.task_id, f"failed to spawn codex: {exc}", type(exc).__name__)
             return
 
-        stream = self._stream_process(task, proc, timeout_seconds, version)
+        stderr_tail = bytearray()
+        stderr_drain = asyncio.create_task(self._drain_stderr(proc, stderr_tail))
+        stream = self._stream_process(
+            task, proc, timeout_seconds, version, stderr_tail, stderr_drain
+        )
         try:
+            if chat_only:
+                assert proc.stdin is not None
+                proc.stdin.write(prompt.encode())
+                await proc.stdin.drain()
+                proc.stdin.close()
             async for event in stream:
                 yield event
         finally:
-            await stream.aclose()
+
+            async def cleanup() -> None:
+                try:
+                    await stream.aclose()
+                finally:
+                    try:
+                        await self._stop_process(proc)
+                    finally:
+                        stderr_drain.cancel()
+                        await asyncio.gather(stderr_drain, return_exceptions=True)
+
+            await _finish_cleanup(cleanup())
+
+    async def _spawn_owned(self, *argv: str, **kwargs: Any) -> asyncio.subprocess.Process:
+        pending = asyncio.create_task(asyncio.create_subprocess_exec(*argv, **kwargs))
+        try:
+            return await asyncio.shield(pending)
+        except asyncio.CancelledError:
+
+            async def cleanup() -> None:
+                process = await pending
+                await self._stop_process(process)
+
+            await _finish_cleanup(cleanup())
+            raise
+
+    @staticmethod
+    async def _drain_stderr(proc: asyncio.subprocess.Process, tail: bytearray) -> None:
+        if proc.stderr is None:
+            return
+        while chunk := await proc.stderr.read(4096):
+            tail.extend(chunk)
+            del tail[:-_STDERR_TAIL_BYTES]
 
     async def _stream_process(
         self,
@@ -290,6 +374,8 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         proc: asyncio.subprocess.Process,
         timeout_seconds: float,
         version: str | None,
+        stderr_tail: bytearray,
+        stderr_drain: asyncio.Task[None],
     ) -> AsyncIterator[dict[str, Any]]:
         accumulated_text: list[str] = []
         native_error: str | None = None
@@ -314,59 +400,54 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 if translated is not None:
                     yield translated
 
+        yield event_started(task.task_id)
+        yield event_state(
+            task.task_id,
+            {"runtime": self.runtime_type, "codex_version": version},
+        )
         try:
-            yield event_started(task.task_id)
-            yield event_state(
+            async with asyncio.timeout(timeout_seconds):
+                async for event in _read_events():
+                    if event["type"] == "text":
+                        accumulated_text.append(event.get("text", ""))
+                    elif event["type"] == "error":
+                        native_error = event.get("message") or "Codex reported an error"
+                        break
+                    yield event
+                if native_error is None:
+                    returncode = await proc.wait()
+                    await stderr_drain
+        except TimeoutError:
+            yield event_error(
                 task.task_id,
-                {"runtime": self.runtime_type, "codex_version": version},
+                f"codex run timed out after {timeout_seconds}s",
+                error_type="TimeoutError",
             )
-            try:
-                async with asyncio.timeout(timeout_seconds):
-                    async for event in _read_events():
-                        if event["type"] == "text":
-                            accumulated_text.append(event.get("text", ""))
-                        elif event["type"] == "error":
-                            native_error = event.get("message") or "Codex reported an error"
-                            break
-                        yield event
-            except TimeoutError:
-                yield event_error(
-                    task.task_id,
-                    f"codex run timed out after {timeout_seconds}s",
-                    error_type="TimeoutError",
-                )
-                return
+            return
 
-            if native_error is not None:
-                await self._stop_process(proc)
-                yield event_error(task.task_id, native_error, error_type="RuntimeInvocationError")
-                return
+        if native_error is not None:
+            yield event_error(task.task_id, native_error, error_type="RuntimeInvocationError")
+            return
 
-            returncode = await proc.wait()
-            if returncode != 0:
-                stderr_tail = b""
-                if proc.stderr is not None:
-                    stderr_tail = await proc.stderr.read()
-                tail = stderr_tail[-_STDERR_TAIL_BYTES:].decode(errors="replace")
-                detail = f": {tail}" if tail else ""
-                yield event_error(
-                    task.task_id,
-                    f"codex exited with code {returncode}{detail}",
-                    error_type="ProcessExitError",
-                )
-                return
-
-            yield event_done(
+        if returncode != 0:
+            tail = stderr_tail.decode(errors="replace")
+            detail = f": {tail}" if tail else ""
+            yield event_error(
                 task.task_id,
-                result={
-                    "runtime": self.runtime_type,
-                    "codex_version": version,
-                    "exit_code": returncode,
-                    "text": "".join(accumulated_text),
-                },
+                f"codex exited with code {returncode}{detail}",
+                error_type="ProcessExitError",
             )
-        finally:
-            await asyncio.shield(self._stop_process(proc))
+            return
+
+        yield event_done(
+            task.task_id,
+            result={
+                "runtime": self.runtime_type,
+                "codex_version": version,
+                "exit_code": returncode,
+                "text": "".join(accumulated_text),
+            },
+        )
 
     async def _detect_version(
         self,
@@ -375,7 +456,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
     ) -> str | None:
         proc: asyncio.subprocess.Process | None = None
         try:
-            proc = await asyncio.create_subprocess_exec(
+            proc = await self._spawn_owned(
                 binary,
                 "--version",
                 stdin=asyncio.subprocess.DEVNULL,
@@ -393,7 +474,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             raise
         finally:
             if proc is not None:
-                await asyncio.shield(self._stop_process(proc))
+                await _finish_cleanup(self._stop_process(proc))
         line = stdout.decode(errors="replace").splitlines()[0].strip() if stdout else ""
         match = _VERSION_RE.search(line)
         return match.group(0) if match else None
@@ -425,38 +506,51 @@ class CodexRuntimeAdapter(RuntimeAdapter):
 
     @staticmethod
     def _stop_process_sync(proc: subprocess.Popen[bytes]) -> None:
-        """Best-effort process-tree cleanup for the registration-time probe."""
+        """Confirm process-tree exit for the registration-time probe."""
 
         pid = proc.pid
         if os.name == "nt":
-            subprocess.run(
+            termination = subprocess.run(
                 ["taskkill", "/PID", str(pid), "/T", "/F"],
                 capture_output=True,
                 check=False,
+                timeout=_KILL_GRACE_SECONDS,
             )
+            if termination.returncode != 0:
+                raise RuntimeInvocationError(
+                    "Runtime process-tree termination was not confirmed", "CleanupUnconfirmed"
+                )
             if proc.returncode is None:
                 try:
                     proc.wait(timeout=_KILL_GRACE_SECONDS)
                 except subprocess.TimeoutExpired:
                     proc.kill()
-                    proc.wait()
+                    try:
+                        proc.wait(timeout=_KILL_GRACE_SECONDS)
+                    except subprocess.TimeoutExpired as exc:
+                        raise RuntimeInvocationError(
+                            "Runtime process exit was not confirmed", "CleanupUnconfirmed"
+                        ) from exc
             return
 
-        try:
-            os.killpg(pid, signal.SIGTERM)
-        except ProcessLookupError:
-            return
-        deadline = time.monotonic() + _KILL_GRACE_SECONDS
-        while time.monotonic() < deadline:
+        for stop_signal in (signal.SIGTERM, signal.SIGKILL):
             try:
-                os.killpg(pid, 0)
+                os.killpg(pid, stop_signal)
             except ProcessLookupError:
                 return
-            time.sleep(0.05)
-        try:
-            os.killpg(pid, signal.SIGKILL)
-        except ProcessLookupError:
-            return
+            deadline = time.monotonic() + _KILL_GRACE_SECONDS
+            while True:
+                proc.poll()
+                try:
+                    os.killpg(pid, 0)
+                except ProcessLookupError:
+                    return
+                if time.monotonic() >= deadline:
+                    break
+                time.sleep(0.05)
+        raise RuntimeInvocationError(
+            "Runtime process-group exit was not confirmed", "CleanupUnconfirmed"
+        )
 
     async def _stop_process(self, proc: asyncio.subprocess.Process) -> None:
         pid = getattr(proc, "pid", None)
@@ -467,15 +561,25 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                     await asyncio.wait_for(proc.wait(), timeout=_KILL_GRACE_SECONDS)
                 except TimeoutError:
                     proc.kill()
-                    await proc.wait()
+                    try:
+                        await asyncio.wait_for(proc.wait(), timeout=_KILL_GRACE_SECONDS)
+                    except TimeoutError as exc:
+                        raise RuntimeInvocationError(
+                            "Runtime process exit was not confirmed", "CleanupUnconfirmed"
+                        ) from exc
             return
         elif os.name == "nt":
-            await asyncio.to_thread(
+            termination = await asyncio.to_thread(
                 subprocess.run,
                 ["taskkill", "/PID", str(pid), "/T", "/F"],
                 capture_output=True,
                 check=False,
+                timeout=_KILL_GRACE_SECONDS,
             )
+            if termination.returncode != 0:
+                raise RuntimeInvocationError(
+                    "Runtime process-tree termination was not confirmed", "CleanupUnconfirmed"
+                )
         else:
             try:
                 os.killpg(pid, signal.SIGTERM)
@@ -488,13 +592,21 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                     os.killpg(pid, signal.SIGKILL)
                 except ProcessLookupError:
                     return
-                await self._wait_for_process_group_exit(pid, _KILL_GRACE_SECONDS)
+                if not await self._wait_for_process_group_exit(pid, _KILL_GRACE_SECONDS):
+                    raise RuntimeInvocationError(
+                        "Runtime process-group exit was not confirmed", "CleanupUnconfirmed"
+                    )
         elif proc.returncode is None:
             try:
                 await asyncio.wait_for(proc.wait(), timeout=_KILL_GRACE_SECONDS)
             except TimeoutError:
                 proc.kill()
-                await proc.wait()
+                try:
+                    await asyncio.wait_for(proc.wait(), timeout=_KILL_GRACE_SECONDS)
+                except TimeoutError as exc:
+                    raise RuntimeInvocationError(
+                        "Runtime process exit was not confirmed", "CleanupUnconfirmed"
+                    ) from exc
 
     @staticmethod
     async def _wait_for_process_group_exit(pid: int, timeout_seconds: float) -> bool:

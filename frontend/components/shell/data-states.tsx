@@ -28,7 +28,7 @@ export function LoadingState({ rows = 4 }: { rows?: number }) {
         <span>正在读取运行状态</span>
       </div>
       {Array.from({ length: rows }).map((_, i) => (
-        <Skeleton key={i} className="h-16 w-full rounded-lg" />
+        <Skeleton key={i} aria-hidden="true" className="h-16 w-full animate-none rounded-lg" />
       ))}
     </div>
   )
@@ -62,7 +62,7 @@ export function ErrorState({
   )
 }
 
-export function EmptyState({ title, description }: { title?: string; description?: string }) {
+export function EmptyState({ title, description, action }: { title?: string; description?: string; action?: React.ReactNode }) {
   return (
     <Empty className="border border-dashed">
       <EmptyHeader>
@@ -72,6 +72,7 @@ export function EmptyState({ title, description }: { title?: string; description
         <EmptyTitle>{title ?? '暂无数据'}</EmptyTitle>
         <EmptyDescription>{description ?? '当前没有可显示的内容。'}</EmptyDescription>
       </EmptyHeader>
+      {action ? <EmptyContent>{action}</EmptyContent> : null}
     </Empty>
   )
 }

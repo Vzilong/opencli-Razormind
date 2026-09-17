@@ -22,6 +22,7 @@ def _space(**overrides):
         "owner_type": "operator",
         "owner_id": "operator-1",
         "status": "idle",
+        "control_mode": "agent",
         "granted_capabilities": ["snapshot"],
         "revision": 0,
         "last_error_code": None,

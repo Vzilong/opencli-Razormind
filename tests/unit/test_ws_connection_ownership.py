@@ -17,6 +17,7 @@ def isolated_connections():
         manager._pending_agent_tasks,
         manager._task_owners,
         manager._agent_task_callbacks,
+        manager._agent_task_status_probes,
     )
     for registry in registries:
         registry.clear()
@@ -165,3 +166,70 @@ async def test_websocket_entrypoints_reject_foreign_frames(entrypoint, monkeypat
     assert not terminal.done()
     event_handler.assert_not_awaited()
     assert manager.is_connected("http://owner")
+
+
+async def test_node_receive_loop_routes_status_reply_to_exact_probe(monkeypatch):
+    from unittest.mock import Mock
+
+    from starlette.websockets import WebSocketDisconnect
+
+    from backend import database
+    from backend.api.v1 import nodes
+
+    def unavailable_database():
+        raise RuntimeError("Controlled unavailable metadata store")
+
+    monkeypatch.setattr(database, "AsyncSessionLocal", unavailable_database)
+    monkeypatch.setattr(nodes, "_pool_add", Mock())
+    messages = asyncio.Queue()
+    registered = asyncio.Event()
+    peer = AsyncMock()
+    await messages.put(
+        {
+            "type": "register",
+            "agent_url": "http://peer",
+            "mode": "bridge",
+            "node_type": "shell",
+        }
+    )
+
+    async def receive():
+        message = await messages.get()
+        if isinstance(message, Exception):
+            raise message
+        return message
+
+    async def send(frame):
+        if frame["type"] == "registered":
+            registered.set()
+        elif frame["type"] == "agent_task_status":
+            await messages.put(
+                {
+                    "type": "agent_task_status_result",
+                    "request_id": frame["request_id"],
+                    "task_id": frame["task_id"],
+                    "result": {
+                        "type": "error",
+                        "error_type": "CancelledError",
+                        "task_id": frame["task_id"],
+                        "cleanup_complete": True,
+                    },
+                }
+            )
+
+    peer.receive_json.side_effect = receive
+    peer.send_json.side_effect = send
+    connection = asyncio.create_task(nodes.node_ws_endpoint(peer))
+    try:
+        await asyncio.wait_for(registered.wait(), 1)
+        result = await manager.probe_agent_task("http://peer", "original", timeout=1)
+        assert result == {
+            "type": "error",
+            "error_type": "CancelledError",
+            "task_id": "original",
+            "cleanup_complete": True,
+        }
+        assert not manager._agent_task_status_probes
+    finally:
+        await messages.put(WebSocketDisconnect())
+        await asyncio.wait_for(connection, 1)

@@ -393,20 +393,30 @@ def test_source_and_release_smokes_gate_daemon_recovery_before_release() -> None
     assert release_jobs["github-release"]["needs"] == "promote"
 
 
-def test_public_release_keeps_existing_security_and_packaging_guards() -> None:
+def test_public_release_keeps_existing_security_and_packaging_guards(monkeypatch) -> None:
     workflow = source(".github/workflows/ci.yml")
     release_workflow = source(".github/workflows/release.yml")
     windows_installer = source("scripts/install.ps1")
     unix_installer = source("scripts/install.sh")
+    browser_containers = source("backend/api/v1/browser_containers.py")
+    settings_source = source("backend/config.py")
+    compose_source = source("docker-compose.yml")
 
     assert (ROOT / "scripts" / "install.sh").is_file()
     assert (ROOT / "scripts" / "install.ps1").is_file()
     assert "BOOTSTRAP_ADMIN_TOKEN" in env_contract()
     assert "BOOTSTRAP_ADMIN_TOKEN" in unix_installer
     assert "BOOTSTRAP_ADMIN_TOKEN" in windows_installer
-    assert 'os.environ.get("NOVNC_BASE_PORT", 6080)' in source(
-        "backend/api/v1/browser_containers.py"
-    )
+    assert "novnc_base_port: int = 6080" in settings_source
+    assert "novnc_base = get_settings().novnc_base_port" in browser_containers
+    assert 'ports={"6080/tcp": ("127.0.0.1", novnc_port)}' in browser_containers
+    assert "NOVNC_BASE_PORT: ${NOVNC_BASE_PORT:-6080}" in compose_source
+    monkeypatch.delenv("NOVNC_BASE_PORT", raising=False)
+    from backend.config import Settings
+
+    assert Settings(_env_file=None).novnc_base_port == 6080
+    monkeypatch.setenv("NOVNC_BASE_PORT", "6180")
+    assert Settings(_env_file=None).novnc_base_port == 6180
     assert "Assert-NativeSuccess" in windows_installer
     assert "-UseBasicParsing" in windows_installer
     assert "http://localhost:$FrontendPort/login" in windows_installer

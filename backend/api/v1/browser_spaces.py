@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database import get_db
 from backend.schemas.browser_space import (
+    BrowserSpaceControlUpdate,
     BrowserSpaceCreate,
     BrowserSpaceEventRead,
     BrowserSpaceRead,
@@ -177,6 +178,29 @@ async def get_browser_space(
     except browser_space_service.BrowserSpaceError as exc:
         raise _service_error(exc) from exc
     return ApiResponse.ok(_space_read(space, active_task))
+
+
+@router.post("/{space_id}/control", response_model=ApiResponse[BrowserSpaceRead])
+async def change_browser_space_control(
+    workspace_id: str,
+    space_id: str,
+    body: BrowserSpaceControlUpdate,
+    identity: RequestIdentity = Depends(get_request_identity),
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse:
+    access = await get_workspace_access(db, workspace_id, identity)
+    require_permission(access, WorkspacePermission.MANAGE_CONFIGURATION)
+    try:
+        space = await browser_space_service.get_space(
+            db, workspace_id, space_id, _space_identity(identity, access)
+        )
+        _require_owner_or_manager(space, identity, access)
+        changed = await browser_space_service.change_control_mode(
+            db, workspace_id, space_id, body.mode, body.expected_revision
+        )
+    except browser_space_service.BrowserSpaceError as exc:
+        raise _service_error(exc) from exc
+    return ApiResponse.ok(_space_read(changed))
 
 
 @router.post("/{space_id}/tasks", response_model=ApiResponse[BrowserSpaceTaskRead])

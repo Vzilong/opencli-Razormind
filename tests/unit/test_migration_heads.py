@@ -3,6 +3,7 @@ import sqlite3
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+import pytest
 from alembic import command
 from alembic.config import Config
 from alembic.script import ScriptDirectory
@@ -14,7 +15,92 @@ def test_alembic_has_one_head():
     config = Config()
     config.set_main_option("script_location", "backend/migrations")
 
-    assert ScriptDirectory.from_config(config).get_heads() == ["int20260905a"]
+    assert ScriptDirectory.from_config(config).get_heads() == ["bsc20260914a"]
+
+
+def test_browser_space_control_migration_defaults_existing_spaces_to_agent(monkeypatch):
+    with TemporaryDirectory() as directory:
+        database = Path(directory) / "browser-space-control.db"
+        monkeypatch.setenv("DATABASE_URL", f"sqlite+aiosqlite:///{database.as_posix()}")
+        get_settings.cache_clear()
+        config = Config()
+        config.set_main_option("script_location", "backend/migrations")
+        try:
+            command.upgrade(config, "kb20260914a")
+            connection = sqlite3.connect(database)
+            try:
+                connection.execute(
+                    "INSERT INTO browser_spaces "
+                    "(id, workspace_id, browser_instance_id, binding_id, owner_type, owner_id, "
+                    "status, granted_capabilities, revision, last_error_code, "
+                    "created_at, updated_at) "
+                    "VALUES ('space-1', 'workspace-1', 'instance-1', NULL, 'operator', 'owner', "
+                    "'idle', '[]', 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+                )
+                connection.commit()
+            finally:
+                connection.close()
+            command.upgrade(config, "head")
+            connection = sqlite3.connect(database)
+            try:
+                assert connection.execute(
+                    "SELECT control_mode FROM browser_spaces WHERE id = 'space-1'"
+                ).fetchone() == ("agent",)
+            finally:
+                connection.close()
+        finally:
+            get_settings.cache_clear()
+
+
+@pytest.mark.parametrize(
+    ("statement", "message"),
+    [
+        (
+            "UPDATE browser_spaces SET control_mode = 'human' WHERE id = 'space-1'",
+            "human control state",
+        ),
+        (
+            "INSERT INTO browser_space_events "
+            "(id, space_id, task_id, sequence, kind, payload, created_at, updated_at) "
+            "VALUES ('event-1', 'space-1', NULL, 1, 'control_changed', '{}', "
+            "CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+            "control_changed audit events",
+        ),
+    ],
+)
+def test_browser_space_control_migration_refuses_lossy_downgrade(monkeypatch, statement, message):
+    with TemporaryDirectory() as directory:
+        database = Path(directory) / "browser-space-control-downgrade.db"
+        monkeypatch.setenv("DATABASE_URL", f"sqlite+aiosqlite:///{database.as_posix()}")
+        get_settings.cache_clear()
+        config = Config()
+        config.set_main_option("script_location", "backend/migrations")
+        try:
+            command.upgrade(config, "kb20260914a")
+            connection = sqlite3.connect(database)
+            try:
+                connection.execute(
+                    "INSERT INTO browser_spaces "
+                    "(id, workspace_id, browser_instance_id, binding_id, owner_type, owner_id, "
+                    "status, granted_capabilities, revision, last_error_code, "
+                    "created_at, updated_at) "
+                    "VALUES ('space-1', 'workspace-1', 'instance-1', NULL, 'operator', 'owner', "
+                    "'idle', '[]', 0, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+                )
+                connection.commit()
+            finally:
+                connection.close()
+            command.upgrade(config, "head")
+            connection = sqlite3.connect(database)
+            try:
+                connection.execute(statement)
+                connection.commit()
+            finally:
+                connection.close()
+            with pytest.raises(RuntimeError, match=message):
+                command.downgrade(config, "kb20260914a")
+        finally:
+            get_settings.cache_clear()
 
 
 def test_ci_downgrade_target_is_unambiguous():

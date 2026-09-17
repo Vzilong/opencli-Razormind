@@ -1,9 +1,12 @@
 import {
   Activity,
+  BookOpen,
+  Tags,
   Blocks,
   Database,
   LayoutDashboard,
   PanelsTopLeft,
+  Sparkles,
   Settings2,
   ShieldAlert,
   ShieldCheck,
@@ -44,6 +47,7 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     label: '构建',
     items: [
+      { href: '/launch', label: '新建工作', icon: Sparkles },
       { href: '/studio', label: '项目', icon: PanelsTopLeft, match: ['/studio', '/canvas'] },
       { href: '/plugins', label: '插件中心', icon: Blocks },
       {
@@ -58,6 +62,7 @@ export const NAV_GROUPS: NavGroup[] = [
     label: '运行与数据',
     items: [
       { href: '/records', label: '成果与数据', icon: Database },
+      { href: '/knowledge', label: '知识库', icon: BookOpen },
       {
         href: '/nodes',
         label: '执行资源',
@@ -69,6 +74,7 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     label: '管理',
     items: [
+      { href: '/browser-accounts', label: '账号登录', icon: ShieldCheck },
       {
         href: '/providers',
         label: '模型与连接',
@@ -96,6 +102,7 @@ export const ROUTE_LABELS: Record<string, string> = {
   '/dashboard': '概览',
   '/inbox': '任务与通知',
   '/studio': '项目',
+  '/launch': '新建工作',
   '/studio/workflow': '工作流编排',
   '/canvas': '节点工作流（兼容入口）',
   '/agent-workbench': 'Coding Workbench',
@@ -104,6 +111,8 @@ export const ROUTE_LABELS: Record<string, string> = {
   '/schedules': '自动化与智能体',
   '/tasks': '工作项',
   '/records': '成果与数据',
+  '/knowledge': '知识库',
+  '/brands': '品牌与产品（兼容）',
   '/notifications': '通知',
   '/agents': '智能体',
   '/operations-agents': '自动化与智能体',
@@ -113,6 +122,7 @@ export const ROUTE_LABELS: Record<string, string> = {
   '/nodes': '执行资源',
   '/workers': 'Worker',
   '/browsers': 'Chrome 池',
+  '/browser-accounts': '账号登录',
   '/control/actions': '控制与审计',
   '/control/kill-switch': '熔断开关',
   '/control/advisory-report': '建议报告',

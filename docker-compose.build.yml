@@ -11,6 +11,7 @@ x-backend-build: &backend-build
   build:
     context: .
     dockerfile: Dockerfile
+    target: production
 
 x-agent-build: &agent-build
   build:

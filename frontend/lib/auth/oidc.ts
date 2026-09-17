@@ -44,7 +44,7 @@ export function getOidcManager(): UserManager | null {
 
 export function oidcReturnTo(user: User): string {
   const state = user.state
-  if (!state || typeof state !== 'object' || !('returnTo' in state)) return '/studio'
+  if (!state || typeof state !== 'object' || !('returnTo' in state)) return '/launch'
   const returnTo = (state as { returnTo?: unknown }).returnTo
   return sanitizeReturnTo(returnTo)
 }
@@ -93,5 +93,5 @@ export function shouldAcceptOidcRenewal(
 export function sanitizeReturnTo(value: unknown): string {
   return typeof value === 'string' && value.startsWith('/') && !value.startsWith('//')
     ? value
-    : '/studio'
+    : '/launch'
 }

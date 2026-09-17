@@ -13,6 +13,7 @@ security-critical properties get dedicated coverage:
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 
 from backend.llm.anthropic import AnthropicAdapter
@@ -23,6 +24,101 @@ from backend.llm.openai_compat import OpenAICompatAdapter
 from backend.models.provider import ModelProvider
 
 SECRET_KEY = "sk-test-super-secret-do-not-leak-12345"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("key", [None, "private-local-test-key"])
+async def test_local_real_sdk_discovers_and_chats_without_required_credentials(monkeypatch, key):
+    requests = []
+
+    async def handle(request):
+        requests.append(request)
+        if request.url.path == "/v1/models":
+            return httpx.Response(
+                200,
+                json={
+                    "object": "list",
+                    "data": [
+                        {"id": "local-model", "object": "model", "created": 0, "owned_by": "local"}
+                    ],
+                },
+            )
+        assert request.url.path == "/v1/chat/completions"
+        return httpx.Response(
+            200,
+            json={
+                "id": "local-chat",
+                "object": "chat.completion",
+                "created": 0,
+                "model": "local-model",
+                "choices": [
+                    {
+                        "index": 0,
+                        "finish_reason": "stop",
+                        "message": {"role": "assistant", "content": "local response"},
+                    }
+                ],
+            },
+        )
+
+    monkeypatch.setattr(
+        "backend.llm.openai_compat.PinnedAsyncHTTPTransport",
+        lambda *args, **kwargs: httpx.MockTransport(handle),
+    )
+    adapter = OpenAICompatAdapter(
+        _provider(
+            provider_type="local",
+            api_key=key,
+            base_url="http://127.0.0.1:11434/v1",
+            default_model="local-model",
+        )
+    )
+    try:
+        assert await adapter.list_models() == ["local-model"]
+        assert await adapter.chat([{"role": "user", "content": "hello"}]) == "local response"
+        assert all(
+            request.headers["authorization"] == "Bearer " + (key or "local-no-key")
+            for request in requests
+        )
+    finally:
+        await adapter.aclose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("url", [None, "", "   "])
+async def test_local_missing_address_never_constructs_cloud_client(url):
+    adapter = OpenAICompatAdapter(_provider(provider_type="local", api_key=None, base_url=url))
+    with patch("openai.AsyncOpenAI") as sdk:
+        with pytest.raises(LlmAdapterError, match="explicit base_url"):
+            await adapter.get_client()
+        sdk.assert_not_called()
+
+
+def test_local_model_selection_never_defaults_to_cloud_model():
+    adapter = OpenAICompatAdapter(_provider(provider_type="local", default_model=None))
+    with pytest.raises(LlmAdapterError, match="Select a model"):
+        adapter._resolve_model(None)
+
+
+@pytest.mark.asyncio
+async def test_chat_local_client_preserves_local_type_and_ignores_cloud_environment_key(
+    monkeypatch,
+):
+    from backend.api.v1.chat import _build_client, _chat_model
+
+    monkeypatch.setenv("OPENAI_API_KEY", "cloud-key-must-not-leak")
+    provider = _provider(
+        provider_type="local", api_key=None, base_url="http://127.0.0.1:1234/v1", default_model=None
+    )
+    with pytest.raises(LlmAdapterError, match="Select a model"):
+        _chat_model(provider)
+    assert _chat_model(provider, "local-model") == "local-model"
+    client = await _build_client(provider)
+    try:
+        assert client.api_key == "local-no-key"
+        assert str(client.base_url) == "http://127.0.0.1:1234/v1/"
+    finally:
+        await client.close()
 
 
 def _provider(**overrides) -> ModelProvider:
@@ -43,9 +139,7 @@ def _models_page(ids: list[str]) -> SimpleNamespace:
 
 
 def _chat_response(text: str) -> SimpleNamespace:
-    return SimpleNamespace(
-        choices=[SimpleNamespace(message=SimpleNamespace(content=text))]
-    )
+    return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=text))])
 
 
 # ── OpenAICompatAdapter: chat / list_models / test_connection ──────────────
@@ -272,9 +366,7 @@ async def test_anthropic_test_connection_failure_sanitized():
 async def test_anthropic_chat_failure_raises_without_key():
     provider = _anthropic_provider()
     mock_client = MagicMock()
-    mock_client.messages.create = AsyncMock(
-        side_effect=Exception(f"bad key {SECRET_KEY}")
-    )
+    mock_client.messages.create = AsyncMock(side_effect=Exception(f"bad key {SECRET_KEY}"))
     with patch("anthropic.AsyncAnthropic", return_value=mock_client):
         adapter = AnthropicAdapter(provider)
         with pytest.raises(LlmAdapterError) as exc_info:

@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from backend import database
 from backend.api.v1.browser_spaces import router
+from backend.api.v1.browsers import runtime_router
 from backend.models.browser import (
     BrowserBinding,
     BrowserInstance,
@@ -24,6 +25,7 @@ from backend.models.identity import User, Workspace, WorkspaceMembership
 from backend.security.identity import RequestIdentity, get_request_identity, is_platform_admin
 from backend.services import browser_capability_service as capabilities
 from backend.services import browser_space_service as spaces
+from backend.services.browser_service import BrowserRuntimeError
 from tests.browser_space_fixtures import configure_space_runtime
 
 _REAL_DISPATCH = capabilities._dispatch_capability
@@ -58,6 +60,7 @@ async def contract(tmp_path, monkeypatch):
 
     app = FastAPI()
     app.include_router(router)
+    app.include_router(runtime_router)
     identity = {"subject": "owner", "platform_admin": True}
 
     async def get_identity():
@@ -148,6 +151,219 @@ async def test_http_lifecycle_real_capability_dispatch_and_terminal_replay(contr
     encoded = json.dumps([detail, events])
     for secret in ["private-cookie", "private-token", "slot:9222", "private page"]:
         assert secret not in encoded
+
+
+@pytest.mark.asyncio
+async def test_control_mode_uses_cas_records_safe_event_and_blocks_human_submit(contract):
+    created = await create(contract)
+    space_id = created.json()["data"]["id"]
+    path = f"{contract['base']}/{space_id}"
+
+    human = await contract["client"].post(
+        f"{path}/control", json={"mode": "human", "expected_revision": 0}
+    )
+    assert human.status_code == 200, human.text
+    assert human.json()["data"]["control_mode"] == "human"
+    assert human.json()["data"]["revision"] == 1
+    events = (await contract["client"].get(f"{path}/events")).json()["data"]
+    assert events == [
+        {
+            "id": events[0]["id"],
+            "space_id": space_id,
+            "task_id": None,
+            "sequence": 1,
+            "kind": "control_changed",
+            "payload": {"mode": "human", "revision": 1},
+            "created_at": events[0]["created_at"],
+        }
+    ]
+    stale = await contract["client"].post(
+        f"{path}/control", json={"mode": "agent", "expected_revision": 0}
+    )
+    assert stale.status_code == 409
+    assert stale.json()["detail"] == "stale_revision"
+    blocked = await contract["client"].post(
+        f"{path}/tasks",
+        json={"request_id": "human-blocked", "capability": "snapshot", "args": {}},
+    )
+    assert blocked.status_code == 409
+    assert blocked.json()["detail"] == "human_control_active"
+    restored = await contract["client"].post(
+        f"{path}/control", json={"mode": "agent", "expected_revision": 1}
+    )
+    assert restored.status_code == 200
+    assert restored.json()["data"]["revision"] == 2
+
+
+@pytest.mark.asyncio
+async def test_control_rejects_nonowner_active_cleanup_and_closed_spaces(contract):
+    space_id = (await create(contract)).json()["data"]["id"]
+    path = f"{contract['base']}/{space_id}"
+    contract["identity"]["subject"] = "stranger"
+    assert (
+        await contract["client"].post(
+            f"{path}/control", json={"mode": "human", "expected_revision": 0}
+        )
+    ).status_code == 403
+    contract["identity"]["subject"] = "owner"
+    async with contract["factory"]() as db:
+        task, _ = await spaces.submit_task(
+            db,
+            contract["workspace"],
+            space_id,
+            {"request_id": "active", "capability": "snapshot", "args": {}},
+            execute=False,
+        )
+        assert task.status == "queued"
+    active = await contract["client"].post(
+        f"{path}/control", json={"mode": "human", "expected_revision": 1}
+    )
+    assert active.status_code == 409
+    assert active.json()["detail"] == "space_task_in_progress"
+    async with contract["factory"]() as db:
+        task = await db.get(BrowserSpaceTask, task.id)
+        space = await db.get(BrowserSpace, space_id)
+        task.status = "cancelled"
+        space.last_error_code = "runtime_cleanup_unconfirmed"
+        await db.commit()
+    cleanup = await contract["client"].post(
+        f"{path}/control", json={"mode": "human", "expected_revision": 1}
+    )
+    assert cleanup.status_code == 409
+    assert cleanup.json()["detail"] == "runtime_cleanup_unconfirmed"
+    async with contract["factory"]() as db:
+        space = await db.get(BrowserSpace, space_id)
+        space.last_error_code = None
+        space.status = "closed"
+        await db.commit()
+    closed = await contract["client"].post(
+        f"{path}/control", json={"mode": "human", "expected_revision": 1}
+    )
+    assert closed.status_code == 409
+    assert closed.json()["detail"] == "closed_space"
+
+
+@pytest.mark.asyncio
+async def test_control_rejects_nonidle_or_unhealthy_space(contract):
+    space_id = (await create(contract)).json()["data"]["id"]
+    path = f"{contract['base']}/{space_id}"
+    async with contract["factory"]() as db:
+        space = await db.get(BrowserSpace, space_id)
+        space.status = "running"
+        await db.commit()
+    nonidle = await contract["client"].post(
+        f"{path}/control", json={"mode": "human", "expected_revision": 0}
+    )
+    assert nonidle.status_code == 409
+    assert nonidle.json()["detail"] == "space_not_idle"
+    async with contract["factory"]() as db:
+        space = await db.get(BrowserSpace, space_id)
+        space.status = "idle"
+        space.last_error_code = "slot_not_ready"
+        await db.commit()
+    unhealthy = await contract["client"].post(
+        f"{path}/control", json={"mode": "human", "expected_revision": 0}
+    )
+    assert unhealthy.status_code == 409
+    assert unhealthy.json()["detail"] == "space_not_idle"
+
+
+@pytest.mark.asyncio
+async def test_concurrent_submission_and_control_change_cannot_queue_human_task(contract):
+    space_id = (await create(contract)).json()["data"]["id"]
+
+    async def submit():
+        async with contract["factory"]() as db:
+            return await spaces.submit_task(
+                db,
+                contract["workspace"],
+                space_id,
+                {"request_id": "control-race", "capability": "snapshot", "args": {}},
+                execute=False,
+            )
+
+    async def switch_to_human():
+        async with contract["factory"]() as db:
+            return await spaces.change_control_mode(
+                db, contract["workspace"], space_id, "human", 0
+            )
+
+    results = await asyncio.gather(submit(), switch_to_human(), return_exceptions=True)
+    assert sum(not isinstance(result, Exception) for result in results) == 1
+    assert any(isinstance(result, spaces.BrowserSpaceError) for result in results)
+    async with contract["factory"]() as db:
+        space = await db.get(BrowserSpace, space_id)
+        tasks = list(
+            (
+                await db.scalars(
+                    select(BrowserSpaceTask).where(BrowserSpaceTask.space_id == space_id)
+                )
+            ).all()
+        )
+    assert not (space.control_mode == "human" and any(task.status == "queued" for task in tasks))
+
+
+@pytest.mark.asyncio
+async def test_raw_capability_route_cannot_bypass_active_space_reservation(contract):
+    await create(contract)
+    async with contract["factory"]() as db:
+        instance = await db.get(BrowserInstance, contract["instance"])
+        with pytest.raises(BrowserRuntimeError, match="reserved browser instances") as error:
+            await capabilities.invoke_capability(
+                db, instance, "snapshot", {}, gate=None, gate_authorized=True
+            )
+    assert error.value.code == "browser_space_reserved"
+
+
+@pytest.mark.asyncio
+async def test_raw_capability_http_route_reports_active_space_as_conflict(contract):
+    await create(contract)
+    response = await contract["client"].post(
+        f"/browser-sessions/{contract['instance']}/capabilities/snapshot/invoke",
+        json={"args": {}},
+    )
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "browser_space_reserved"
+
+
+@pytest.mark.asyncio
+async def test_space_capability_proof_requires_matching_uncancelled_task(contract):
+    space_id = (await create(contract)).json()["data"]["id"]
+    async with contract["factory"]() as db:
+        task, _ = await spaces.submit_task(
+            db,
+            contract["workspace"],
+            space_id,
+            {"request_id": "proof", "capability": "snapshot", "args": {}},
+            execute=False,
+        )
+        task.status = "running"
+        await db.commit()
+        instance = await db.get(BrowserInstance, contract["instance"])
+        with pytest.raises(BrowserRuntimeError, match="not controlled") as wrong_capability:
+            await capabilities.invoke_capability(
+                db,
+                instance,
+                "other",
+                {},
+                gate=None,
+                gate_authorized=True,
+                space_task_id=task.id,
+            )
+        assert wrong_capability.value.code == "browser_space_control_denied"
+        task.cancel_requested = True
+        await db.commit()
+        with pytest.raises(BrowserRuntimeError, match="not controlled") as cancelled:
+            await capabilities.invoke_capability(
+                db,
+                instance,
+                "snapshot",
+                {},
+                gate=None,
+                gate_authorized=True,
+                space_task_id=task.id,
+            )
+    assert cancelled.value.code == "browser_space_control_denied"
 
 
 @pytest.mark.asyncio

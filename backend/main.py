@@ -17,6 +17,7 @@ from backend.security.fleet_auth import (
     enforce_bind_guard,
     resolve_uvicorn_host,
 )
+from backend.security.log_redaction import install_log_redaction
 from backend.security.question_bank_body_limit import QuestionBankBodyLimitMiddleware
 from backend.workflow.plugin_registry import build_workflow_plugin_registry
 
@@ -35,6 +36,7 @@ def _configure_logging() -> None:
         if name.startswith("backend") and isinstance(lgr, logging.Logger):
             lgr.disabled = False
             lgr.setLevel(logging.INFO)
+    install_log_redaction()
 
 
 _configure_logging()
@@ -57,6 +59,7 @@ def _read_chrome_endpoints() -> list[str]:
     import os
 
     candidates = [
+        *([os.environ["ENV_FILE_PATH"]] if os.environ.get("ENV_FILE_PATH") else []),
         "/app/.env",
         os.path.join(os.path.dirname(__file__), "..", ".env"),
     ]
@@ -161,6 +164,11 @@ async def lifespan(app: FastAPI):
     )
 
     await recover_operations_agent_runs_on_startup()
+    from backend.services import research_service
+
+    recovered_research = await research_service.recover_queued_runs_on_startup()
+    research_service.start_research_recovery_supervisor()
+    logger.info("Requeued %d research runs", len(recovered_research))
     logger.info("Recovered stale tasks on startup")
 
     # Managed acquisitions are durable submit-and-observe work. Unlike legacy
@@ -222,6 +230,7 @@ async def lifespan(app: FastAPI):
     )
     yield
     # Shutdown
+    await research_service.shutdown_research_tasks()
     acquisition_sweeper_stop.set()
     await acquisition_sweeper
     await cycle_task.stop()
@@ -238,7 +247,8 @@ def create_app(*, app_settings: Settings | None = None) -> FastAPI:
         title="OpenCLI Admin",
         description=(
             "Agent-driven workflow and data collection platform. Authenticate protected REST "
-            "and MCP calls with `Authorization: Bearer <API_AUTH_TOKEN>`. Agent workflow: "
+            "and MCP calls with a user bearer in `Authorization` and, when enabled, "
+            "the separate fleet credential in `X-API-Token`. Agent workflow: "
             "inspect `/api/v1/workflows/capabilities`, draft with "
             "`/api/v1/workflows/demand-draft`, validate with `/api/v1/workflows/compile`, "
             "then review before publishing or running."

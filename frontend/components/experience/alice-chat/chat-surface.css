@@ -1,0 +1,82 @@
+.alice-chat {
+  --background: #fafafa;
+  --foreground: #202020;
+  --card: #ffffff;
+  --secondary: #f0f0f0;
+  --muted: #eeeeee;
+  --muted-foreground: #6b6b6b;
+  --border: #e3e3e3;
+  --accent: #ebebeb;
+  --shadow-color: #000000;
+  --ring: #888888;
+  --motion-fast: 110ms;
+  --motion-standard: 160ms;
+  --motion-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --motion-ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.dark .alice-chat {
+  --background: #181818;
+  --foreground: #eeeeee;
+  --card: #282828;
+  --secondary: #222222;
+  --muted: #303030;
+  --muted-foreground: #a0a0a0;
+  --border: #303030;
+  --accent: #2a2a2a;
+}
+
+.alice-chat .alice-icon { display: inline-flex; height: 28px; width: 28px; align-items: center; justify-content: center; border-radius: 6px; color: var(--muted-foreground); }
+.alice-chat .alice-picker { display: inline-flex; min-height: 28px; min-width: 0; align-items: center; gap: 6px; padding: 0 8px; border-radius: 6px; font-size: 12px; white-space: nowrap; }
+.alice-chat :is(.alice-icon, .alice-picker):hover { background: var(--accent); color: var(--foreground); }
+.alice-chat :is(button, a, input):focus-visible { outline: 1px solid var(--ring); outline-offset: -1px; }
+.alice-chat button:disabled { cursor: not-allowed; opacity: 0.5; }
+
+.alice-chat .oa-harness-context-tray {
+  background: color-mix(in srgb, var(--secondary) 86%, var(--card));
+  box-shadow:
+    inset 1px 0 0 color-mix(in srgb, var(--foreground) 5%, transparent),
+    inset -1px 0 0 color-mix(in srgb, var(--foreground) 5%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--foreground) 4%, transparent);
+  transition:
+    background-color var(--motion-standard) var(--motion-ease-standard),
+    box-shadow var(--motion-standard) var(--motion-ease-standard);
+}
+
+.alice-chat .oa-harness-composer-shell {
+  background: color-mix(in srgb, var(--card) 94%, transparent);
+  backdrop-filter: blur(16px);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--shadow-color) 4%, transparent),
+    0 2px 8px color-mix(in srgb, var(--shadow-color) 4%, transparent),
+    0 14px 52px color-mix(in srgb, var(--shadow-color) 8%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--foreground) 4%, transparent);
+  transition: box-shadow var(--motion-fast) var(--motion-ease-out);
+}
+
+.alice-chat .oa-harness-composer-shell:focus-within {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--shadow-color) 5%, transparent),
+    0 2px 8px color-mix(in srgb, var(--shadow-color) 5%, transparent),
+    0 16px 58px color-mix(in srgb, var(--shadow-color) 10%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--foreground) 6%, transparent);
+}
+
+.alice-runtime-dialog { --popover: var(--card); --popover-foreground: var(--foreground); }
+
+@supports (corner-shape: superellipse(1.5)) {
+  .alice-chat .oa-harness-context-tray,
+  .alice-chat .oa-harness-composer-shell { corner-shape: superellipse(1.5); }
+}
+
+@media (max-width: 639px) {
+  .alice-chat .alice-picker { gap: 4px; padding: 0 4px; }
+  .alice-chat .alice-picker:first-child { max-width: 140px; }
+  .alice-chat .oa-harness-context-tray { padding-left: 8px; padding-right: 8px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .alice-chat * { transition-duration: 0s !important; animation-duration: 0s !important; }
+}

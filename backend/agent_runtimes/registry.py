@@ -60,6 +60,7 @@ def _load_all_runtimes() -> None:
         codex_adapter,
         hermes_adapter,
         miniflow_adapter,
+        omp_adapter,
         openclaw_adapter,
         opentabs_adapter,
         pi_adapter,

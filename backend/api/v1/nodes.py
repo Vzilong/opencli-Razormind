@@ -5,6 +5,7 @@ Both HTTP-mode agents (center calls agent) and WS-mode agents (agent initiates
 reverse channel) register here and have their online/offline history tracked.
 """
 import io
+import json
 import logging
 import re
 import shlex
@@ -225,6 +226,10 @@ async def register_node(
     result = await db.execute(select(BrowserInstance).where(BrowserInstance.endpoint == url))
     inst = result.scalar_one_or_none()
     if inst:
+        if inst.profile_kind != body.profile_kind:
+            from backend.services.browser_account_service import require_unassigned
+
+            await require_unassigned(db, inst.id)
         inst.mode = body.mode
         inst.agent_url = url
         inst.agent_protocol = body.agent_protocol
@@ -367,8 +372,6 @@ async def delete_node(node_id: str, db: AsyncSession = Depends(get_db)) -> ApiRe
     if not node:
         raise HTTPException(status_code=404, detail="Node not found")
 
-    _pool_remove(node.url)
-
     # Also remove BrowserInstance record
     from backend.models.browser import BrowserInstance
 
@@ -377,10 +380,14 @@ async def delete_node(node_id: str, db: AsyncSession = Depends(get_db)) -> ApiRe
     )
     bi = bi_result.scalar_one_or_none()
     if bi:
+        from backend.services.browser_account_service import require_unassigned
+
+        await require_unassigned(db, bi.id)
         await db.delete(bi)
 
     await db.delete(node)
     await db.commit()
+    _pool_remove(node.url)
     logger.info("Node deleted: %s", node.url)
     return ApiResponse.ok(None)
 
@@ -875,6 +882,10 @@ async def node_ws_endpoint(ws: WebSocket) -> None:
                 )
                 inst = result.scalar_one_or_none()
                 if inst:
+                    if inst.profile_kind != profile_kind:
+                        from backend.services.browser_account_service import require_unassigned
+
+                        await require_unassigned(db, inst.id)
                     inst.mode = mode
                     inst.agent_url = agent_url
                     inst.agent_protocol = "ws"
@@ -893,6 +904,9 @@ async def node_ws_endpoint(ws: WebSocket) -> None:
                     )
                     db.add(inst)
                 await db.commit()
+        except HTTPException:
+            await ws.close(code=1008, reason="Account Profile is reserved")
+            return
         except Exception as exc:
             logger.warning("WS node %s: DB upsert failed (non-fatal): %s", agent_url, exc)
 
@@ -909,7 +923,25 @@ async def node_ws_endpoint(ws: WebSocket) -> None:
 
         # ── 3. Receive loop ───────────────────────────────────────────────
         while True:
-            msg = await ws.receive_json()
+            packet = await ws.receive()
+            if packet["type"] == "websocket.disconnect":
+                raise WebSocketDisconnect(packet.get("code", 1000))
+            binary = packet.get("bytes")
+            if isinstance(binary, bytes):
+                try:
+                    await ws_agent_manager.resolve_terminal_binary(binary, source_ws=ws)
+                except ValueError:
+                    await ws.close(code=1008, reason="Malformed terminal frame")
+                    return
+                continue
+            text = packet.get("text")
+            try:
+                msg = json.loads(text) if isinstance(text, str) else None
+            except json.JSONDecodeError:
+                msg = None
+            if not isinstance(msg, dict):
+                await ws.close(code=1008, reason="Malformed control frame")
+                return
             msg_type = msg.get("type")
             if msg_type == "result":
                 ws_agent_manager.resolve_response(msg.get("request_id", ""), msg, source_ws=ws)
@@ -919,6 +951,14 @@ async def node_ws_endpoint(ws: WebSocket) -> None:
                 )
             elif msg_type == "agent_result":
                 ws_agent_manager.resolve_agent_result(msg.get("request_id", ""), msg, source_ws=ws)
+            elif msg_type == "agent_task_status_result":
+                ws_agent_manager.resolve_agent_task_status(
+                    msg.get("request_id", ""), msg, source_ws=ws
+                )
+            elif msg_type == "terminal_response":
+                ws_agent_manager.resolve_terminal_response(msg, source_ws=ws)
+            elif msg_type == "terminal_event":
+                await ws_agent_manager.resolve_terminal_event(msg, source_ws=ws)
             elif msg_type == "ping":
                 await ws.send_json({"type": "pong"})
             else:

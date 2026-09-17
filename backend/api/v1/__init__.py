@@ -4,10 +4,13 @@ from fastapi import APIRouter
 
 from backend.api.v1 import (
     agent_conversations,
+    agent_data,
     agents,
     analysis_findings,
     analysis_snapshots,
     automations,
+    brand_knowledge,
+    browser_accounts,
     browser_act,
     browser_containers,
     browser_spaces,
@@ -29,6 +32,7 @@ from backend.api.v1 import (
     internal_agent_runs,
     internal_automations,
     internal_collaboration,
+    knowledge_libraries,
     model_defaults,
     nodes,
     notifications,
@@ -42,6 +46,7 @@ from backend.api.v1 import (
     project_source_bindings,
     providers,
     records,
+    research,
     research_graph_v2_routes,
     schedules,
     skill_bridge,
@@ -65,10 +70,14 @@ def create_v1_router(workflow_plugins: WorkflowPluginRegistry) -> APIRouter:
     """Assemble core routes and explicitly injected workflow-plugin routes."""
 
     v1_router = APIRouter(prefix="/api/v1")
+    v1_router.include_router(brand_knowledge.router)
+    v1_router.include_router(knowledge_libraries.router)
+    v1_router.include_router(knowledge_libraries.bindings_router)
     studio_router = create_studio_router()
 
     v1_router.include_router(agents.router)
     v1_router.include_router(agent_conversations.router)
+    v1_router.include_router(agent_data.router)
     v1_router.include_router(analysis_findings.router)
     v1_router.include_router(analysis_snapshots.router)
     v1_router.include_router(geo_acquisition.router)
@@ -76,6 +85,7 @@ def create_v1_router(workflow_plugins: WorkflowPluginRegistry) -> APIRouter:
     v1_router.include_router(automations.router)
     v1_router.include_router(odp_reconciliation.router)
     v1_router.include_router(image_studio.router)
+    v1_router.include_router(browser_accounts.router)
     v1_router.include_router(browser_act.router)
     v1_router.include_router(browser_containers.router)
     v1_router.include_router(browsers.router)
@@ -96,6 +106,7 @@ def create_v1_router(workflow_plugins: WorkflowPluginRegistry) -> APIRouter:
     v1_router.include_router(sources.router)
     v1_router.include_router(tasks.router)
     v1_router.include_router(records.router)
+    v1_router.include_router(research.router)
     v1_router.include_router(schedules.router)
     v1_router.include_router(skills.router)
     v1_router.include_router(skill_bridge.router)

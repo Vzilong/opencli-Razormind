@@ -109,6 +109,7 @@ class CapabilityExecutor:
                     gate_authorized=self.gate_authorized,
                     audit_input_payload=_safe_result(args),
                     commit_before_dispatch=True,
+                    space_task_id=task_id,
                 )
             finally:
                 await runtime_session.commit()
@@ -555,6 +556,10 @@ async def submit_task(
             return existing if legacy_call else (existing, False)
         if space.status == BrowserSpaceStatus.CLOSED.value:
             raise BrowserSpaceError("closed_space", "closed browser space rejects new tasks", 409)
+        if space.control_mode != "agent":
+            raise BrowserSpaceError(
+                "human_control_active", "human control rejects agent task submission", 409
+            )
         if space.last_error_code == "runtime_cleanup_unconfirmed":
             raise BrowserSpaceError(
                 "runtime_cleanup_unconfirmed", "runtime slot is quarantined", 409
@@ -595,6 +600,47 @@ async def submit_task(
             browser_capability_service.validate_capability_args(definition, args)
         except BrowserRuntimeError as exc:
             raise BrowserSpaceError(exc.code, "invalid capability arguments", 422) from exc
+        claimed_space = await db.execute(
+            update(BrowserSpace)
+            .where(BrowserSpace.id == space_id)
+            .where(BrowserSpace.workspace_id == workspace_id)
+            .where(BrowserSpace.control_mode == "agent")
+            .where(BrowserSpace.status != BrowserSpaceStatus.CLOSED.value)
+            .where(
+                (BrowserSpace.last_error_code.is_(None))
+                | (BrowserSpace.last_error_code != "runtime_cleanup_unconfirmed")
+            )
+            .where(
+                ~select(BrowserSpaceTask.id)
+                .where(BrowserSpaceTask.space_id == BrowserSpace.id)
+                .where(BrowserSpaceTask.status.in_(("queued", "running")))
+                .exists()
+            )
+            .values(revision=BrowserSpace.revision + 1)
+        )
+        if claimed_space.rowcount != 1:
+            current = await db.scalar(
+                select(BrowserSpace)
+                .where(BrowserSpace.id == space_id)
+                .execution_options(populate_existing=True)
+            )
+            if current is None:
+                raise BrowserSpaceError("not_found", "browser space not found", 404)
+            if current.control_mode != "agent":
+                raise BrowserSpaceError(
+                    "human_control_active", "human control rejects agent task submission", 409
+                )
+            if current.status == BrowserSpaceStatus.CLOSED.value:
+                raise BrowserSpaceError(
+                    "closed_space", "closed browser space rejects new tasks", 409
+                )
+            if current.last_error_code == "runtime_cleanup_unconfirmed":
+                raise BrowserSpaceError(
+                    "runtime_cleanup_unconfirmed", "runtime slot is quarantined", 409
+                )
+            raise BrowserSpaceError(
+                "space_task_in_progress", "browser space already has an active task", 409
+            )
         task = BrowserSpaceTask(
             space_id=space_id,
             workspace_id=workspace_id,
@@ -697,12 +743,39 @@ async def execute_task(
     if raw_args is None:
         raw_args = {}
 
+    control_space = await db.get(BrowserSpace, task.space_id)
+    if control_space is None:
+        raise BrowserSpaceError("not_found", "browser space not found", 404)
+    if control_space.control_mode != "agent":
+        raise BrowserSpaceError(
+            "human_control_active", "human control rejects agent task execution", 409
+        )
+    if control_space.status == BrowserSpaceStatus.CLOSED.value:
+        raise BrowserSpaceError(
+            "closed_space", "closed browser space rejects agent task execution", 409
+        )
+    if control_space.last_error_code == "runtime_cleanup_unconfirmed":
+        raise BrowserSpaceError(
+            "runtime_cleanup_unconfirmed", "runtime slot is quarantined", 409
+        )
+
     started_at = datetime.now(UTC)
     claim = await db.execute(
         update(BrowserSpaceTask)
         .where(BrowserSpaceTask.id == task.id)
         .where(BrowserSpaceTask.status == BrowserSpaceTaskStatus.QUEUED.value)
         .where(BrowserSpaceTask.cancel_requested.is_(False))
+        .where(
+            BrowserSpaceTask.space_id.in_(
+                select(BrowserSpace.id)
+                .where(BrowserSpace.control_mode == "agent")
+                .where(BrowserSpace.status != BrowserSpaceStatus.CLOSED.value)
+                .where(
+                    (BrowserSpace.last_error_code.is_(None))
+                    | (BrowserSpace.last_error_code != "runtime_cleanup_unconfirmed")
+                )
+            )
+        )
         .values(
             status=BrowserSpaceTaskStatus.RUNNING.value,
             started_at=started_at,
@@ -988,6 +1061,86 @@ async def close_space(
     space.revision += 1
     await _append_event(
         db, space.id, BrowserSpaceEventKind.CANCELLED, None, {"reason": "space_closed"}
+    )
+    await db.commit()
+    await db.refresh(space)
+    return space
+
+
+async def change_control_mode(
+    db: AsyncSession,
+    workspace_id: str,
+    space_id: str,
+    mode: str,
+    expected_revision: int,
+) -> BrowserSpace:
+    if mode not in {"agent", "human"}:
+        raise BrowserSpaceError("invalid_control_mode", "invalid browser control mode", 422)
+    space = await get_space(db, workspace_id, space_id, for_update=True)
+    changed = await db.execute(
+        update(BrowserSpace)
+        .where(BrowserSpace.id == space.id)
+        .where(BrowserSpace.workspace_id == workspace_id)
+        .where(BrowserSpace.revision == expected_revision)
+        .where(BrowserSpace.status == BrowserSpaceStatus.IDLE.value)
+        .where(BrowserSpace.last_error_code.is_(None))
+        .where(
+            ~select(BrowserSpaceTask.id)
+            .where(BrowserSpaceTask.space_id == BrowserSpace.id)
+            .where(BrowserSpaceTask.status.in_(("queued", "running")))
+            .exists()
+        )
+        .values(control_mode=mode, revision=BrowserSpace.revision + 1)
+    )
+    if changed.rowcount != 1:
+        current = await db.scalar(
+            select(BrowserSpace)
+            .where(BrowserSpace.id == space.id)
+            .execution_options(populate_existing=True)
+        )
+        if current is None:
+            raise BrowserSpaceError("not_found", "browser space not found", 404)
+        if current.revision != expected_revision:
+            raise BrowserSpaceError(
+                "stale_revision",
+                f"expected revision {expected_revision}, current revision {current.revision}",
+                409,
+            )
+        if current.status == BrowserSpaceStatus.CLOSED.value:
+            raise BrowserSpaceError(
+                "closed_space", "closed browser space cannot change control", 409
+            )
+        if current.last_error_code == "runtime_cleanup_unconfirmed":
+            raise BrowserSpaceError(
+                "runtime_cleanup_unconfirmed", "runtime slot is quarantined", 409
+            )
+        if current.status != BrowserSpaceStatus.IDLE.value or current.last_error_code is not None:
+            raise BrowserSpaceError(
+                "space_not_idle",
+                "browser space must be idle and healthy before control changes",
+                409,
+            )
+        active = await db.scalar(
+            select(BrowserSpaceTask.id)
+            .where(BrowserSpaceTask.space_id == current.id)
+            .where(BrowserSpaceTask.status.in_(("queued", "running")))
+            .limit(1)
+        )
+        if active is not None:
+            raise BrowserSpaceError(
+                "space_task_in_progress", "browser space has an active task", 409
+            )
+        raise BrowserSpaceError(
+            "stale_revision",
+            f"expected revision {expected_revision}, current revision {current.revision}",
+            409,
+        )
+    await db.refresh(space)
+    await _append_event(
+        db,
+        space.id,
+        BrowserSpaceEventKind.CONTROL_CHANGED,
+        payload={"mode": space.control_mode, "revision": space.revision},
     )
     await db.commit()
     await db.refresh(space)

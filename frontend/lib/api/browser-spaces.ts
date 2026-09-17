@@ -3,8 +3,9 @@ import type { ApiResponse } from './types'
 
 export type BrowserSpaceStatus = 'idle' | 'running' | 'closed' | 'error'
 export type BrowserSpaceTaskStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
-export type BrowserSpaceEventKind = 'queued' | 'started' | 'completed' | 'failed' | 'cancel_requested' | 'cancelled'
+export type BrowserSpaceEventKind = 'queued' | 'started' | 'completed' | 'failed' | 'cancel_requested' | 'cancelled' | 'control_changed'
 export type BrowserSpaceOwnerType = 'operator' | 'runtime_agent'
+export type BrowserSpaceControlMode = 'agent' | 'human'
 
 export interface BrowserSpace {
   id: string
@@ -13,6 +14,7 @@ export interface BrowserSpace {
   binding_id: string | null
   owner_type: BrowserSpaceOwnerType
   owner_id: string
+  control_mode: BrowserSpaceControlMode
   status: BrowserSpaceStatus
   granted_capabilities: string[]
   revision: number
@@ -77,6 +79,11 @@ export interface BrowserSpaceTaskResponse {
   error: string | null
 }
 
+export interface BrowserSpaceControlRequest {
+  mode: BrowserSpaceControlMode
+  expected_revision: number
+}
+
 export interface BrowserSpaceEvents {
   events: BrowserSpaceEvent[]
 }
@@ -128,6 +135,14 @@ export const closeBrowserSpace = (workspaceId: string, spaceId: string) =>
   apiClient
     .post<ApiResponse<BrowserSpace>>( `${spacePath(workspaceId, spaceId)}/close`)
     .then((response) => response.data.data)
+
+export const updateBrowserSpaceControl = (
+  workspaceId: string,
+  spaceId: string,
+  data: BrowserSpaceControlRequest,
+) => apiClient
+  .post<ApiResponse<BrowserSpace>>(`${spacePath(workspaceId, spaceId)}/control`, data)
+  .then((response) => response.data.data)
 
 export const listBrowserSpaceEvents = (
   workspaceId: string,

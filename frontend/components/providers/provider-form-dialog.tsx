@@ -209,6 +209,10 @@ export function ProviderFormDialog({
       toast.error('请填写供应商名称')
       return
     }
+    if (form.provider_type === 'local' && !form.base_url.trim()) {
+      toast.error('请填写本地模型的 API 地址（包含 /v1）')
+      return
+    }
     if (credentialRequired && !form.api_key.trim()) {
       toast.error('请先填写 API Key')
       return
@@ -314,6 +318,19 @@ export function ProviderFormDialog({
           ) : null}
 
           <FieldGroup className="gap-5">
+            {form.provider_type === 'local' ? (
+              <Field>
+                <FieldLabel htmlFor="local-provider-base-url">本地模型 API 地址</FieldLabel>
+                <Input id="local-provider-base-url" value={form.base_url} required
+                  placeholder="http://127.0.0.1:11434/v1"
+                  onChange={(event) => setForm((current) => ({ ...current, base_url: event.target.value }))} />
+                <FieldDescription>
+                  地址从平台后端访问。后端在 Docker 中时，连接宿主机请使用 host.docker.internal，
+                  Linux Docker 需配置 host-gateway 映射。局域网服务请填写对应 IP；确认服务已启动并加载模型。
+                  未开启鉴权时可以不填密钥。保存后点击“设为默认”，研究任务才会使用该模型。
+                </FieldDescription>
+              </Field>
+            ) : null}
             <Field>
               <div className="flex items-center justify-between gap-3">
                 <FieldLabel htmlFor="provider-api-key" className="gap-2">
@@ -441,7 +458,7 @@ export function ProviderFormDialog({
                   />
                 </Field>
 
-                <Field>
+                {form.provider_type !== 'local' ? <Field>
                   <FieldLabel htmlFor="provider-base-url">API 地址</FieldLabel>
                   <Input
                     id="provider-base-url"
@@ -451,7 +468,7 @@ export function ProviderFormDialog({
                       setForm((current) => ({ ...current, base_url: event.target.value }))
                     }
                   />
-                </Field>
+                </Field> : null}
               </div>
 
               <Field>

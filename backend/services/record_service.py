@@ -1,8 +1,9 @@
 from sqlalchemy import String, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.models.brand_knowledge import BrandProjectScope
 from backend.models.record import CollectedRecord
-from backend.models.studio import StudioWorkflow
+from backend.models.studio import StudioProject, StudioWorkflow
 
 
 async def list_records(
@@ -16,6 +17,10 @@ async def list_records(
     limit: int = 20,
     sort_by: str = "created_at",
     sort_order: str = "desc",
+    workspace_id: str | None = None,
+    brand_id: str | None = None,
+    product_id: str | None = None,
+    unclassified: bool = False,
 ) -> tuple[list[CollectedRecord], int]:
     sort_column = {
         "created_at": CollectedRecord.created_at,
@@ -31,6 +36,24 @@ async def list_records(
     count_query = select(func.count()).select_from(CollectedRecord)
 
     filters = []
+    if workspace_id:
+        scoped = (
+            select(StudioWorkflow.id)
+            .join(StudioProject, StudioWorkflow.project_id == StudioProject.id)
+            .where(StudioProject.workspace_id == workspace_id)
+        )
+        if brand_id or product_id or unclassified:
+            scoped = scoped.outerjoin(
+                BrandProjectScope, BrandProjectScope.project_id == StudioProject.id
+            )
+            if unclassified:
+                scoped = scoped.where(BrandProjectScope.id.is_(None))
+            else:
+                if brand_id:
+                    scoped = scoped.where(BrandProjectScope.brand_id == brand_id)
+                if product_id:
+                    scoped = scoped.where(BrandProjectScope.product_id == product_id)
+        filters.append(CollectedRecord.workflow_id.in_(scoped))
     if source_id:
         filters.append(CollectedRecord.source_id == source_id)
     if task_id:
@@ -64,12 +87,8 @@ async def list_records(
     return result.scalars().all(), total
 
 
-async def get_record(
-    session: AsyncSession, record_id: str
-) -> CollectedRecord | None:
-    result = await session.execute(
-        select(CollectedRecord).where(CollectedRecord.id == record_id)
-    )
+async def get_record(session: AsyncSession, record_id: str) -> CollectedRecord | None:
+    result = await session.execute(select(CollectedRecord).where(CollectedRecord.id == record_id))
     return result.scalar_one_or_none()
 
 
